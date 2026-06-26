@@ -4380,7 +4380,22 @@ function generateDocPDF(){
       ${mesPeriodo.map((l,i)=>`<div style="font-size:${i===0?'15':'12'}pt;margin-top:${i===0?'24':'10'}px;font-weight:${i===0?'700':'400'};color:${i>0?'#555':'#000'}">${l}</div>`).join('')}
     </div>`;
   } else {
-    bodyContent=`<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${previewText}</pre>${fotoHTML}`;
+    // Converte tabela de texto em HTML real para o PDF
+    const tabelaRegex = /Tipo \| Dias úteis \| Qtd\/dia VT \| Valor unitário \| Valor total\n(.+)/;
+    let pdfText = previewText;
+    if(tabelaRegex.test(pdfText)){
+      pdfText = pdfText.replace(tabelaRegex, (match, dataRow) => {
+        const cols = dataRow.split('|').map(c=>c.trim());
+        return `__TABLE__<table style="border-collapse:collapse;width:100%;margin:8px 0;font-family:Arial;font-size:11pt"><thead><tr style="border-bottom:2px solid #333"><th style="text-align:left;padding:6px 10px">Tipo</th><th style="text-align:left;padding:6px 10px">Dias úteis</th><th style="text-align:left;padding:6px 10px">Qtd/dia VT</th><th style="text-align:left;padding:6px 10px">Valor unitário</th><th style="text-align:left;padding:6px 10px">Valor total</th></tr></thead><tbody><tr><td style="padding:6px 10px">${cols[0]||''}</td><td style="padding:6px 10px">${cols[1]||''}</td><td style="padding:6px 10px">${cols[2]||''}</td><td style="padding:6px 10px">${cols[3]||''}</td><td style="padding:6px 10px">${cols[4]||''}</td></tr></tbody></table>__ENDTABLE__`;
+      });
+      const parts = pdfText.split(/__TABLE__|__ENDTABLE__/);
+      bodyContent = parts.map((p,i) => i%3===0
+        ? `<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${p}</pre>`
+        : (i%3===1 ? p : '')
+      ).join('') + fotoHTML;
+    } else {
+      bodyContent=`<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${pdfText}</pre>${fotoHTML}`;
+    }
   }
 
   const win=window.open('','_blank');
