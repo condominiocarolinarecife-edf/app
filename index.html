@@ -4389,10 +4389,11 @@ function generateDocPDF(){
         return `__TABLE__<table style="border-collapse:collapse;width:100%;margin:8px 0;font-family:Arial;font-size:11pt"><thead><tr style="border-bottom:2px solid #333"><th style="text-align:left;padding:6px 10px">Tipo</th><th style="text-align:left;padding:6px 10px">Dias úteis</th><th style="text-align:left;padding:6px 10px">Qtd/dia VT</th><th style="text-align:left;padding:6px 10px">Valor unitário</th><th style="text-align:left;padding:6px 10px">Valor total</th></tr></thead><tbody><tr><td style="padding:6px 10px">${cols[0]||''}</td><td style="padding:6px 10px">${cols[1]||''}</td><td style="padding:6px 10px">${cols[2]||''}</td><td style="padding:6px 10px">${cols[3]||''}</td><td style="padding:6px 10px">${cols[4]||''}</td></tr></tbody></table>__ENDTABLE__`;
       });
       const parts = pdfText.split(/__TABLE__|__ENDTABLE__/);
-      bodyContent = parts.map((p,i) => i%3===0
-        ? `<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${p}</pre>`
-        : (i%3===1 ? p : '')
-      ).join('') + fotoHTML;
+      // parts[0]=antes, parts[1]=tabela HTML, parts[2]=depois
+      bodyContent = `<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${parts[0]||''}</pre>`
+        + (parts[1]||'')
+        + `<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${parts[2]||''}</pre>`
+        + fotoHTML;
     } else {
       bodyContent=`<pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8">${pdfText}</pre>${fotoHTML}`;
     }
