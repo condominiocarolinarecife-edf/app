@@ -3953,15 +3953,15 @@ const docGroups=[
           {id:'cartao-vt',label:'Nº Cartão VEM',tipo:'text'},
           {id:'periodo',label:'Período (ex: mai/26)',tipo:'text'},
           {id:'dias-uteis',label:'Dias úteis no mês',tipo:'number',default:'25'},
-          {id:'qtd-vt',label:'Qtd total de unidades VT',tipo:'number',default:'50'},
+          {id:'qtd-vt',label:'Passagens por dia',tipo:'number',default:'2'},
           {id:'valor-unit',label:'Valor unitário (R$)',tipo:'number',default:'4.50'},
           {id:'feriados',label:'Feriados (um por linha)',tipo:'textarea'},
           {id:'data',label:'Data do recibo',tipo:'date'}
         ],
         template:(f,g)=>{
           const feriados=(f.feriados||'').split('\n').filter(x=>x.trim()).map((x,i)=>`${i+1} ${x.trim()}`).join('\n');
-          const vtTotal=(parseFloat(f['valor-unit']||4.50)*parseInt(f['qtd-vt']||50)).toFixed(2);
-          return `${g.nome.toUpperCase()}\nCNPJ ${g.cnpj} - ${g.endereco}\n\nPROTOCOLO DE ENTREGA VALE TRANSPORTE\n\nNome func.: ${f['nome-func']||'WELLINGTON GOMES DA SILVA'}\nPeríodo: ${f.periodo||'[mês/ano]'}\n\nPROTOCOLO DE ENTREGA DO VALE TRANSPORTE, REFERENTE AO MÊS DO PERÍODO ACIMA MENCIONADO. VALOR PAGO EM CARTÃO VEM TRABALHADOR Nº ${f['cartao-vt']||'[número do cartão]'}.\n\nTipo | Dias úteis | Qtd total de VT | Valor unitário | Valor total\nA    | ${f['dias-uteis']||25}         | ${f['qtd-vt']||50}                | R$ ${f['valor-unit']||'4,50'}         | R$ ${vtTotal}\n\n${f.data?formatDateBR(f.data):'Recife, ______ de __________ de '+state.year+'.'}\n\n_____________________________________\n${f['nome-func']||'WELLINGTON GOMES DA SILVA'}\nCPF ${f['cpf-func']||'042.250.384-32'}${feriados?'\n\nFERIADOS:\n'+feriados:''}`;
+          const qtdPorDia=parseInt(f['qtd-vt']||2);const diasUteis=parseInt(f['dias-uteis']||25);const qtdTotal=diasUteis*qtdPorDia;const vtTotal=(parseFloat(f['valor-unit']||4.50)*qtdTotal).toFixed(2);
+          return `${g.nome.toUpperCase()}\nCNPJ ${g.cnpj} - ${g.endereco}\n\nPROTOCOLO DE ENTREGA VALE TRANSPORTE\n\nNome func.: ${f['nome-func']||'WELLINGTON GOMES DA SILVA'}\nPeríodo: ${f.periodo||'[mês/ano]'}\n\nPROTOCOLO DE ENTREGA DO VALE TRANSPORTE, REFERENTE AO MÊS DO PERÍODO ACIMA MENCIONADO. VALOR PAGO EM CARTÃO VEM TRABALHADOR Nº ${f['cartao-vt']||'[número do cartão]'}.\n\nTipo | Dias úteis | Qtd total de VT | Valor unitário | Valor total\nA    | ${f['dias-uteis']||25}         | ${qtdTotal}                | R$ ${f['valor-unit']||'4,50'}         | R$ ${vtTotal}\n\n${f.data?formatDateBR(f.data):'Recife, ______ de __________ de '+state.year+'.'}\n\n_____________________________________\n${f['nome-func']||'WELLINGTON GOMES DA SILVA'}\nCPF ${f['cpf-func']||'042.250.384-32'}${feriados?'\n\nFERIADOS:\n'+feriados:''}`;
         }
       }
     ]
