@@ -529,7 +529,10 @@ textarea{resize:vertical;min-height:80px}
           <div class="card">
             <div class="card-header">
               <div class="card-title">Despesas</div>
-              <button class="btn" onclick="openModalDespesa()" style="padding:5px 10px;font-size:12px">+ Lançamento</button>
+              <div style="display:flex;gap:6px">
+                <button class="btn" onclick="abrirModalLoteDespesa()" style="padding:5px 10px;font-size:12px">⚡ Recorrentes em Lote</button>
+                <button class="btn" onclick="openModalDespesa()" style="padding:5px 10px;font-size:12px">+ Lançamento</button>
+              </div>
             </div>
             <div id="bal-despesas-content"></div>
           </div>
@@ -892,6 +895,11 @@ textarea{resize:vertical;min-height:80px}
               <button class="btn" onclick="atualizarAptSindico()" style="white-space:nowrap;font-size:12px;padding:6px 12px">Aplicar isenção</button>
             </div>
             <div style="font-size:11px;color:var(--text3);margin-top:5px" id="gest-sindico-apto-info"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data da assembleia que aprovou a isenção</label>
+            <input type="date" id="gest-assembleia-isencao">
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Usada para gerar automaticamente a descrição "Isento conforme assembleia dd/mm/aaaa" no lançamento em lote da taxa mensal. Se o(a) síndico(a) mudar, atualize esta data.</div>
           </div>
           <div class="form-group"><label class="form-label">Subsíndico(a)</label><input type="text" id="gest-subsindico" value=""></div>
           <div class="form-group"><label class="form-label">Conselheiro(a) Fiscal 1</label><input type="text" id="gest-cons1" value="Jeizes Silva de Lira"></div>
@@ -1292,9 +1300,22 @@ textarea{resize:vertical;min-height:80px}
           <input type="date" id="lote-data">
         </div>
       </div>
-      <div class="form-group" style="margin-bottom:12px">
-        <label class="form-label">Descrição</label>
-        <input type="text" id="lote-desc" placeholder="Ex: Taxa mensal 05/2026">
+      <div id="lote-periodo-wrap" class="form-group" style="margin-bottom:12px;display:none">
+        <label class="form-label">Período (mm/aaaa)</label>
+        <input type="text" id="lote-periodo" placeholder="Ex: 07/2026" onchange="reaplicarDescLote()">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Gera automaticamente "Taxa Mensal mm/aaaa" para cada unidade. Unidades isentas recebem a descrição de isenção cadastrada em Gestão (com a data da assembleia).</div>
+      </div>
+      <div id="lote-extra-wrap" style="display:none">
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="form-group">
+            <label class="form-label">Motivo</label>
+            <input type="text" id="lote-motivo" placeholder="Ex: Fachada" onchange="reaplicarDescLote()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Parcela</label>
+            <input type="text" id="lote-parcela" placeholder="Ex: 4/10 (em branco = parcela única)" onchange="reaplicarDescLote()">
+          </div>
+        </div>
       </div>
       <div id="lote-taxa-extra-flag" style="display:none;margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
@@ -1302,12 +1323,41 @@ textarea{resize:vertical;min-height:80px}
           Contar como reserva (desmarcar se for reposição)
         </label>
       </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Defina o valor de cada unidade. Deixe <strong>0</strong> para isentos, apague o campo para excluir do lançamento.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Defina o valor de cada unidade. Deixe <strong>0</strong> para isentos, apague o campo para excluir do lançamento. A descrição de cada unidade é gerada automaticamente e pode ser editada se necessário.</div>
       <div id="lote-table"></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-lote-receita')">Cancelar</button>
       <button class="btn primary" onclick="saveLoteReceita()">Lançar Todas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lançar Despesas Recorrentes em Lote -->
+<div class="modal-overlay" id="modal-lote-despesa">
+  <div class="modal" style="width:min(620px,96vw)">
+    <div class="modal-header">
+      <div class="modal-title">Lançar Despesas Recorrentes em Lote</div>
+      <button class="modal-close" onclick="closeModal('modal-lote-despesa')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Categoria (despesas recorrentes)</label>
+        <select id="lde-categoria" onchange="mudarCategoriaLoteDespesa()">
+          <option value="celpe">CELPE (Energia)</option>
+          <option value="compesa">COMPESA (Água/Esgoto)</option>
+          <option value="seguro">Seguro Condomínio</option>
+          <option value="adm">Taxa Administração</option>
+          <option value="secovi">SECOVI/SIECC/PE</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Adicione uma linha para cada mês, informe o valor (e consumo/parcela, se aplicável) e lance todas de uma vez. Cada linha é lançada automaticamente no mês correspondente.</div>
+      <div id="lote-despesa-linhas"></div>
+      <button class="btn" style="margin-top:10px;font-size:12px;padding:5px 10px" onclick="adicionarLinhaLoteDespesa()">+ Adicionar linha</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-lote-despesa')">Cancelar</button>
+      <button class="btn primary" onclick="saveLoteDespesas()">Lançar Todas</button>
     </div>
   </div>
 </div>
@@ -1547,7 +1597,8 @@ let state = {
     subsindico:'',
     cons1:'Jeizes Silva de Lira',
     cons2:'Maria da Conceição Santos Oliveira',
-    zelador:'Wellington Gomes da Silva'
+    zelador:'Wellington Gomes da Silva',
+    assembleiaIsencaoData:'2018-01-30'
   },
   encargos:{
     salario:1639.05, va:455, vt:207, cobSocial:50,
@@ -2538,17 +2589,54 @@ function deleteDespesa(idx){
 }
 
 // --- Lancamento em lote ---
+// Gera a descrição padrão de uma unidade para o lançamento em lote, conforme categoria e status
+function loteDescPadrao(c, cat){
+  if(cat==='taxa-mensal'){
+    if(c.status==='Isento'){
+      const d=state.gestao.assembleiaIsencaoData;
+      return d ? `Isento conforme assembleia ${formatDateBRShort(d)}` : 'Isento conforme assembleia';
+    }
+    const periodo=(document.getElementById('lote-periodo')?.value||'').trim();
+    return periodo ? `Taxa Mensal ${periodo}` : 'Taxa Mensal';
+  }
+  // taxa-extra
+  const motivo=(document.getElementById('lote-motivo')?.value||'').trim();
+  const parcela=(document.getElementById('lote-parcela')?.value||'').trim();
+  let desc='Taxa Extra';
+  if(motivo) desc+=' '+motivo;
+  desc+= parcela ? ` Parcela ${parcela}` : ' Parcela Única';
+  return desc;
+}
+// Reaplica a descrição padrão a todas as unidades (chamado quando período/motivo/parcela mudam)
+function reaplicarDescLote(){
+  const cat=document.getElementById('lote-categoria').value;
+  state.condominos.forEach(c=>{
+    const el=document.getElementById('lote-desc-'+c.apto);
+    if(el) el.value=loteDescPadrao(c,cat);
+  });
+}
 function buildLoteTable(){
   const cat=document.getElementById('lote-categoria').value;
   const isTaxaExtra=cat==='taxa-extra';
+  const isTaxaMensal=cat==='taxa-mensal';
   document.getElementById('lote-taxa-extra-flag').style.display=isTaxaExtra?'block':'none';
-  const taxa=state.condominos.reduce((o,c)=>{o[c.apto]=c.taxa;return o},{});
+  document.getElementById('lote-extra-wrap').style.display=isTaxaExtra?'block':'none';
+  const periodoWrap=document.getElementById('lote-periodo-wrap');
+  periodoWrap.style.display=isTaxaMensal?'block':'none';
+  if(isTaxaMensal){
+    const periodoEl=document.getElementById('lote-periodo');
+    if(periodoEl && !periodoEl.value){
+      const mes=String(state.currentMonth+1).padStart(2,'0');
+      periodoEl.value=`${mes}/${state.year}`;
+    }
+  }
   document.getElementById('lote-table').innerHTML=`
     <table style="width:100%;border-collapse:collapse">
       <thead><tr>
         <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Apt.</th>
         <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Condômino</th>
         <th style="text-align:right;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Valor (R$)</th>
+        <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Descrição</th>
         <th style="text-align:center;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Incluir</th>
       </tr></thead>
       <tbody>
@@ -2558,6 +2646,10 @@ function buildLoteTable(){
           <td style="padding:5px 8px;text-align:right">
             <input type="number" id="lote-val-${c.apto}" value="${c.status==='Isento'?0:c.taxa}"
               step="0.01" style="width:90px;text-align:right;font-family:var(--mono);font-size:13px;padding:3px 6px;border:1px solid var(--border2);border-radius:5px">
+          </td>
+          <td style="padding:5px 8px">
+            <input type="text" id="lote-desc-${c.apto}" value="${(loteDescPadrao(c,cat)||'').replace(/"/g,'&quot;')}"
+              style="width:100%;min-width:180px;font-size:12px;padding:3px 6px;border:1px solid var(--border2);border-radius:5px">
           </td>
           <td style="padding:5px 8px;text-align:center">
             <input type="checkbox" id="lote-inc-${c.apto}" ${c.status==='Isento'?'':'checked'}>
@@ -2578,7 +2670,6 @@ function saveLoteReceita(){
   const m=state.currentMonth;
   const cat=document.getElementById('lote-categoria').value;
   const data=document.getElementById('lote-data').value;
-  const desc=document.getElementById('lote-desc').value;
   const isReserva=cat==='taxa-extra'?document.getElementById('lote-is-reserva').checked:undefined;
   if(!state.balancetes[state.year])state.balancetes[state.year]={};
   if(!state.balancetes[state.year][m])state.balancetes[state.year][m]={receitas:[],despesas:[],obs:'',fechado:false};
@@ -2587,6 +2678,7 @@ function saveLoteReceita(){
     const inc=document.getElementById('lote-inc-'+c.apto);
     if(!inc||!inc.checked)return;
     const val=parseFloat(document.getElementById('lote-val-'+c.apto)?.value||0)||0;
+    const desc=document.getElementById('lote-desc-'+c.apto)?.value||'';
     state.balancetes[state.year][m].receitas.push({
       categoria:cat, unidade:c.apto, valor:val, data, desc,
       isReserva: cat==='taxa-extra' ? isReserva : undefined
@@ -2599,6 +2691,118 @@ function saveLoteReceita(){
   if(btn){const orig=btn.textContent;btn.textContent=`✓ ${count} lançados`;setTimeout(()=>btn.textContent=orig,2000);}
 }
 
+
+// --- Lançamento de despesas recorrentes em lote ---
+let loteDespesaLinhas=[];
+
+function categoriaLoteDespesaAtual(){
+  return document.getElementById('lde-categoria').value;
+}
+
+function coletarLoteDespesaLinhas(){
+  const cat=categoriaLoteDespesaAtual();
+  const usaParcela=cat==='seguro';
+  const usaConsumo=cat==='celpe'||cat==='compesa';
+  loteDespesaLinhas=loteDespesaLinhas.map((_,i)=>({
+    periodo: document.getElementById('lde-periodo-'+i)?.value || '',
+    valor:   document.getElementById('lde-valor-'+i)?.value   || '',
+    consumo: usaConsumo ? (document.getElementById('lde-consumo-'+i)?.value || '') : '',
+    parcela: usaParcela ? (document.getElementById('lde-parcela-'+i)?.value || '') : ''
+  }));
+}
+
+function renderLoteDespesaTable(){
+  const cat=categoriaLoteDespesaAtual();
+  const usaParcela=cat==='seguro';
+  const usaConsumo=cat==='celpe'||cat==='compesa';
+  const cont=document.getElementById('lote-despesa-linhas');
+  cont.innerHTML=`
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Mês de pagamento</th>
+        ${usaParcela?'<th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Parcela</th>':''}
+        ${usaConsumo?'<th style="text-align:right;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Consumo</th>':''}
+        <th style="text-align:right;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Valor (R$)</th>
+        <th style="width:32px"></th>
+      </tr></thead>
+      <tbody>
+        ${loteDespesaLinhas.map((l,i)=>`
+          <tr>
+            <td style="padding:5px 8px"><input type="month" id="lde-periodo-${i}" value="${l.periodo}" style="width:130px;padding:3px 6px;border:1px solid var(--border2);border-radius:5px;font-family:var(--mono);font-size:12px"></td>
+            ${usaParcela?`<td style="padding:5px 8px"><input type="text" id="lde-parcela-${i}" value="${l.parcela}" placeholder="ex: 03/10" style="width:80px;padding:3px 6px;border:1px solid var(--border2);border-radius:5px;font-size:12px"></td>`:''}
+            ${usaConsumo?`<td style="padding:5px 8px;text-align:right"><input type="number" id="lde-consumo-${i}" value="${l.consumo}" placeholder="0" style="width:80px;text-align:right;padding:3px 6px;border:1px solid var(--border2);border-radius:5px;font-size:12px"></td>`:''}
+            <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${i}" value="${l.valor}" placeholder="0,00" style="width:100px;text-align:right;padding:3px 6px;border:1px solid var(--border2);border-radius:5px;font-family:var(--mono);font-size:13px"></td>
+            <td style="padding:5px 8px;text-align:center"><button class="btn" style="padding:2px 8px;font-size:12px" onclick="removerLinhaLoteDespesa(${i})">✕</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function abrirModalLoteDespesa(){
+  loteDespesaLinhas=[{periodo:'',valor:'',consumo:'',parcela:''}];
+  document.getElementById('lde-categoria').selectedIndex=0;
+  renderLoteDespesaTable();
+  showModal('modal-lote-despesa');
+}
+
+function mudarCategoriaLoteDespesa(){
+  coletarLoteDespesaLinhas();
+  renderLoteDespesaTable();
+}
+
+function adicionarLinhaLoteDespesa(){
+  coletarLoteDespesaLinhas();
+  loteDespesaLinhas.push({periodo:'',valor:'',consumo:'',parcela:''});
+  renderLoteDespesaTable();
+}
+
+function removerLinhaLoteDespesa(i){
+  coletarLoteDespesaLinhas();
+  loteDespesaLinhas.splice(i,1);
+  if(loteDespesaLinhas.length===0) loteDespesaLinhas.push({periodo:'',valor:'',consumo:'',parcela:''});
+  renderLoteDespesaTable();
+}
+
+// Gera a descrição igual à do lançamento individual, a partir do mês de pagamento (yyyy-mm)
+function gerarDescLoteDespesa(cat, periodoYYYYMM, consumo, parcela){
+  const [y,m]=periodoYYYYMM.split('-').map(Number);
+  const mesAtualStr=`${String(m).padStart(2,'0')}/${y}`;
+  let refM=m-1, refY=y;
+  if(refM===0){refM=12;refY=y-1;}
+  const refStr=`${String(refM).padStart(2,'0')}/${refY}`;
+  switch(cat){
+    case 'celpe':   return `CELPE (${refStr})`+(consumo?` - consumo: ${consumo} KWh`:'');
+    case 'compesa': return `COMPESA (${refStr})`+(consumo?` - consumo: ${consumo} m³`:'');
+    case 'seguro':  return `Seguro condomínio`+(parcela?` (parcela ${parcela})`:'');
+    case 'adm':     return `Taxa administração (${mesAtualStr})`;
+    case 'secovi':  return `SECOVI/SIECC/PE (${mesAtualStr})`;
+    default: return '';
+  }
+}
+
+function saveLoteDespesas(){
+  coletarLoteDespesaLinhas();
+  const cat=categoriaLoteDespesaAtual();
+  let count=0;
+  loteDespesaLinhas.forEach(l=>{
+    if(!l.periodo || !l.valor) return;
+    const [y,m]=l.periodo.split('-').map(Number);
+    const monthIdx=m-1;
+    const desc=gerarDescLoteDespesa(cat,l.periodo,l.consumo,l.parcela);
+    if(!state.balancetes[y]) state.balancetes[y]={};
+    if(!state.balancetes[y][monthIdx]) state.balancetes[y][monthIdx]={receitas:[],despesas:[],obs:'',fechado:false};
+    state.balancetes[y][monthIdx].despesas.push({
+      categoria: cat,
+      valor: parseFloat(l.valor)||0,
+      data: `${y}-${String(m).padStart(2,'0')}-05`,
+      desc
+    });
+    count++;
+  });
+  save();closeModal('modal-lote-despesa');renderMonthContent();
+  const btn=document.querySelector('#modal-lote-despesa .btn.primary');
+  if(btn){const orig=btn.textContent;btn.textContent=`✓ ${count} lançadas`;setTimeout(()=>btn.textContent=orig,2000);}
+}
 
 function toggleIsReserva(recIdx, val){
   const m = state.currentMonth;
@@ -3719,6 +3923,7 @@ function renderGestao(){
   set('gest-cep',g.cep);set('gest-cidade',g.cidade);
   set('gest-sindico',g.sindico);set('gest-subsindico',g.subsindico);
   set('gest-cons1',g.cons1);set('gest-cons2',g.cons2);
+  set('gest-assembleia-isencao',g.assembleiaIsencaoData||'');
   // Populate sindico apto
   const sel=document.getElementById('gest-sindico-apto');
   if(sel){sel.value=g.sindicoApto||'';}
@@ -3758,7 +3963,9 @@ function atualizarAptSindico(){
     if(novo){
       novo.status='Isento';
       novo.taxa=0;
-      if(!novo.obs.includes('Isento')) novo.obs=(novo.obs?novo.obs+' — ':'')+'Isento — Apartamento do(a) Síndico(a).';
+      const dataAss=state.gestao.assembleiaIsencaoData;
+      const textoIsencao='Isento — Apartamento do(a) Síndico(a)'+(dataAss?` conforme assembleia de ${formatDateBRShort(dataAss)}`:'')+'.';
+      if(!novo.obs.includes('Isento')) novo.obs=(novo.obs?novo.obs+' — ':'')+textoIsencao;
     }
   }
 
@@ -3780,6 +3987,7 @@ function saveGestao(){
   state.gestao.subsindico=document.getElementById('gest-subsindico').value;
   state.gestao.cons1=document.getElementById('gest-cons1').value;
   state.gestao.cons2=document.getElementById('gest-cons2').value;
+  state.gestao.assembleiaIsencaoData=document.getElementById('gest-assembleia-isencao').value;
   save();updateCondNome();alert('Dados salvos!');
 }
 
@@ -4026,6 +4234,14 @@ function formatDateBR(iso){
     const [y,m,d]=iso.split('-');
     const months=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
     return `Recife, ${parseInt(d)} de ${months[parseInt(m)-1]} de ${y}.`;
+  }catch(e){return iso;}
+}
+// Formata data ISO (aaaa-mm-dd) para dd/mm/aaaa, usado nas descrições automáticas de isenção
+function formatDateBRShort(iso){
+  if(!iso)return '';
+  try{
+    const [y,m,d]=iso.split('-');
+    return `${d}/${m}/${y}`;
   }catch(e){return iso;}
 }
 
