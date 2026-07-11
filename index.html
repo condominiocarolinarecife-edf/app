@@ -946,6 +946,10 @@ textarea{resize:vertical;min-height:80px}
         </div>
 
         <div class="sep"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <input type="checkbox" id="doc-duas-vias" style="width:16px;height:16px;cursor:pointer">
+          <label for="doc-duas-vias" style="font-size:13px;cursor:pointer">Gerar 2 vias na mesma página (para casos que precisem de 2ª via)</label>
+        </div>
         <div class="card-title" style="margin-bottom:12px;font-size:13px">Prévia do Documento</div>
         <div id="doc-preview" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:24px;font-size:13px;line-height:1.8;white-space:pre-wrap;font-family:'DM Mono',monospace;color:var(--text)"></div>
       </div>
@@ -4280,6 +4284,8 @@ function openDocTemplate(id){
   if(!t)return;
   activeTemplate=t;
   docFotos=[];
+  const duasViasChk=document.getElementById('doc-duas-vias');
+  if(duasViasChk) duasViasChk.checked=false;
   document.getElementById('doc-editor-title').textContent=t.nome;
   const form=document.getElementById('doc-form-fields');
 
@@ -4616,6 +4622,12 @@ function generateDocPDF(){
   }
 
   const win=window.open('','_blank');
+  const duasVias=document.getElementById('doc-duas-vias')?.checked;
+  if(duasVias){
+    const corte=`<div style="border-top:2px dashed #999;margin:18px 0;padding-top:6px;text-align:center;font-size:9pt;color:#888;font-family:Arial">✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</div>`;
+    const viaTag=(n)=>`<div style="text-align:right;font-size:9pt;color:#888;font-family:Arial;margin-bottom:-8px">${n}ª via</div>`;
+    bodyContent=`${viaTag(1)}${bodyContent}${corte}${viaTag(2)}${bodyContent}`;
+  }
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{max-width:700px;margin:0 auto;padding:40px;font-size:11pt}@media print{button{display:none}}</style></head><body><button onclick="window.print()" style="margin-bottom:20px;padding:8px 20px;font-size:13px">Imprimir / Salvar PDF</button>${bodyContent}</body></html>`);
 
   state.docHistorico.unshift({tipo:activeTemplate.nome,data:new Date().toLocaleDateString('pt-BR'),preview:previewText.substring(0,100)+'...'});
