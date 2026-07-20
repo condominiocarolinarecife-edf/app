@@ -488,6 +488,10 @@ textarea{resize:vertical;min-height:80px}
           </div>
         </div>
       </div>
+      <div class="card" id="card-alertas-dashboard" style="margin-top:20px">
+        <div class="card-header"><div class="card-title">Alertas de Verificação</div></div>
+        <div id="dash-alertas-list"></div>
+      </div>
     </div>
 
     <!-- ==================== BALANCETE ==================== -->
@@ -906,6 +910,33 @@ textarea{resize:vertical;min-height:80px}
           <div class="form-group"><label class="form-label">Conselheiro(a) Fiscal 2</label><input type="text" id="gest-cons2" value="Maria da Conceição Santos Oliveira"></div>
           <button class="btn primary" style="margin-top:8px" onclick="saveGestao()">Salvar</button>
         </div>
+      </div>
+
+      <div class="card" id="card-alertas-gestao" style="margin-top:20px">
+        <div class="card-header">
+          <div class="card-title">Alertas de Verificação</div>
+          <button class="btn" onclick="mostrarFormNovoAlerta()" style="padding:5px 10px;font-size:12px">+ Novo Alerta</button>
+        </div>
+        <div class="section-sub" style="margin-top:-6px;margin-bottom:12px">Cadastre itens recorrentes que precisam de acompanhamento (recarga de extintores, esgotamento de fossa, renovações, etc). A próxima data informada aparece sinalizada no Dashboard.</div>
+
+        <div id="form-novo-alerta" style="display:none;background:var(--accent-light);border:1px solid #c5d9f5;border-radius:8px;padding:12px;margin-bottom:14px">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Nome do alerta</label>
+              <input type="text" id="novo-alerta-nome" placeholder="Ex: Dedetização">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Próxima verificação (mês/ano)</label>
+              <input type="month" id="novo-alerta-data">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="btn" onclick="cancelarNovoAlerta()">Cancelar</button>
+            <button class="btn primary" onclick="salvarNovoAlerta()">Adicionar</button>
+          </div>
+        </div>
+
+        <div id="tabela-alertas-gestao"></div>
       </div>
     </div>
 
@@ -1493,7 +1524,7 @@ textarea{resize:vertical;min-height:80px}
         </div>
         <div class="form-group"><label class="form-label">Novo exercício</label><input type="number" id="novo-exercicio" value="2027"></div>
         <p style="font-size:13px;color:var(--text3);margin-bottom:16px">O sistema irá duplicar: estrutura de balancetes, cadastros de condôminos, dados de funcionário, feriados e previsão orçamentária.</p>
-        <button class="btn danger" onclick="iniciarNovoExercicio()">Iniciar Novo Exercício 2027</button>
+        <button class="btn danger" onclick="abrirModalViradaReservas()">Iniciar Novo Exercício 2027</button>
       </div>
       <div id="conf-backup" class="tab-content" style="display:none">
         <div style="display:flex;flex-direction:column;gap:12px">
@@ -1564,6 +1595,49 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
+<!-- Virada de Ano — decisão sobre reservas -->
+<div class="modal-overlay" id="modal-virada-reservas">
+  <div class="modal" style="width:min(520px,96vw)">
+    <div class="modal-header">
+      <div class="modal-title">Virada de Ano — Reservas</div>
+      <button class="modal-close" onclick="closeModal('modal-virada-reservas')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:16px">O saldo total não muda de qualquer forma — a escolha abaixo é só sobre como cada valor fica identificado no novo exercício.</div>
+
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div class="card-title" style="font-size:13px;margin-bottom:2px">Reserva Funcionário</div>
+        <div style="font-size:20px;font-weight:600;font-family:var(--mono);color:var(--accent);margin-bottom:10px" id="vr-valor-func">R$ 0</div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="vr-func" value="manter" checked style="margin-top:3px">
+          <span><strong>Manter como reserva.</strong> Nada muda: continua reservado e vai acumulando normalmente.</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
+          <input type="radio" name="vr-func" value="zerar" style="margin-top:3px">
+          <span><strong>Trazer para o saldo geral.</strong> Zera a reserva e o valor fica disponível na caixinha de saldo para uso.</span>
+        </label>
+      </div>
+
+      <div class="card" style="padding:14px">
+        <div class="card-title" style="font-size:13px;margin-bottom:2px">Reserva Taxa Extra</div>
+        <div style="font-size:20px;font-weight:600;font-family:var(--mono);color:var(--amber);margin-bottom:10px" id="vr-valor-taxa">R$ 0</div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="vr-taxa" value="manter" checked style="margin-top:3px">
+          <span><strong>Manter como reserva.</strong> Nada muda: continua reservada e vai acumulando conforme surgirem novas taxas extras.</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
+          <input type="radio" name="vr-taxa" value="zerar" style="margin-top:3px">
+          <span><strong>Trazer para o saldo geral.</strong> Zera a reserva e o valor fica disponível na caixinha de saldo para uso.</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-virada-reservas')">Cancelar</button>
+      <button class="btn danger" onclick="confirmarViradaAno()">Confirmar Virada de Ano</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ==================== STATE ====================
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -1599,6 +1673,12 @@ let state = {
     }
   ],
   fornecedores: [],
+  alertas: [
+    {id:'ext-1',   nome:'Recarga de Extintores',            data:''},
+    {id:'fossa-1', nome:'Esgotamento de Fossa',              data:''},
+    {id:'seg-1',   nome:'Renovação do Seguro',               data:''},
+    {id:'cert-1',  nome:'Renovação do Certificado Digital',  data:''}
+  ],
   gestao:{
     nome:'Condomínio Edifício Carolina',
     cnpj:'09.057.612/0001-95',
@@ -2267,6 +2347,7 @@ function renderDashboard(){
   const desp=[4185,4265,0,0,0,0,0,0,0,0,0,0];
   const maxV=Math.max(...data,...desp,100);
   chart.innerHTML=data.map((v,i)=>`<div style="flex:1;display:flex;gap:2px;align-items:flex-end"><div class="mini-bar receita" style="height:${Math.max(4,(v/maxV)*56)}px;flex:1"></div><div class="mini-bar despesa" style="height:${Math.max(4,(desp[i]/maxV)*56)}px;flex:1"></div></div>`).join('');
+  renderAlertasDashboard();
 }
 
 // ==================== BALANCETE ====================
@@ -2417,11 +2498,11 @@ function calcSaldoAnterior(m){
 }
 
 function calcReservaFuncAcum(m){
-  // Reserva cumulativa: começa do zero em Janeiro de cada ano
+  // Reserva cumulativa: começa do valor trazido do ano anterior (reservaFuncInicial), ou zero se não houver
   // Desconta: sal-ferias, sal-13, sal-cob
   // Desconta também: inss e fgts quando marcados como isReservaFunc (referentes a férias/13)
   const reservaMes = calcReservaMensal();
-  let acum = 0;
+  let acum = state.balancetes[state.year]?.[0]?.reservaFuncInicial || 0;
   for(let i = 0; i <= m; i++){
     acum += reservaMes;
     if(i > 0){ // Janeiro nunca desconta — pagamentos são do ano anterior
@@ -2459,7 +2540,8 @@ function calcReservaMensal(){
 function calcReservaTaxaAcum(m){
   // Acumula receitas de taxa extra marcadas como reserva (não reposição)
   // até o mês m, menos o que foi usado via despesas obras-taxa
-  let acum = 0;
+  // Começa do valor trazido do ano anterior (reservaTaxaInicial), ou zero se não houver
+  let acum = state.balancetes[state.year]?.[0]?.reservaTaxaInicial || 0;
   for(let i = 0; i <= m; i++){
     const b = state.balancetes[state.year]?.[i];
     if(!b) continue;
@@ -4027,6 +4109,7 @@ function renderGestao(){
   const sel=document.getElementById('gest-sindico-apto');
   if(sel){sel.value=g.sindicoApto||'';}
   atualizarInfoSindicoApto();
+  renderAlertasGestao();
 }
 
 function atualizarInfoSindicoApto(){
@@ -4088,6 +4171,159 @@ function saveGestao(){
   state.gestao.cons2=document.getElementById('gest-cons2').value;
   state.gestao.assembleiaIsencaoData=document.getElementById('gest-assembleia-isencao').value;
   save();updateCondNome();alert('Dados salvos!');
+}
+
+// ==================== ALERTAS DE VERIFICAÇÃO ====================
+// Classifica um alerta conforme a proximidade da data (mês/aaaa) informada, usando a data real de hoje.
+function classificarAlerta(dataYYYYMM){
+  if(!dataYYYYMM) return {status:'sem-data', diffMeses:null};
+  const hoje=new Date();
+  const anoAtual=hoje.getFullYear(), mesAtual=hoje.getMonth()+1;
+  const [y,m]=dataYYYYMM.split('-').map(Number);
+  const diffMeses=(y*12+m)-(anoAtual*12+mesAtual);
+  let status;
+  if(diffMeses<0) status='red';        // já passou da data
+  else if(diffMeses===0) status='orange'; // é neste mês
+  else if(diffMeses<=2) status='amber';   // faltando 1 ou 2 meses
+  else status='ok';                       // ainda distante
+  return {status, diffMeses};
+}
+
+const ALERTA_STATUS_INFO={
+  red:   {cor:'var(--red)',    bg:'#FBE9E7', label:'Vencido'},
+  orange:{cor:'#E8720C',       bg:'#FDECD8', label:'Neste mês'},
+  amber: {cor:'var(--amber)',  bg:'#FDF3D8', label:'Se aproximando'},
+  ok:    {cor:'var(--green)',  bg:'#EAF3DE', label:'Em dia'},
+  'sem-data':{cor:'var(--text3)', bg:'var(--surface2)', label:'Sem data cadastrada'}
+};
+
+function formatMesAnoAlerta(dataYYYYMM){
+  if(!dataYYYYMM) return '';
+  const [y,m]=dataYYYYMM.split('-');
+  const meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  return `${meses[parseInt(m)-1]}/${y}`;
+}
+
+// Ordena por urgência: vencido > neste mês > se aproximando > em dia > sem data
+function ordenarAlertasPorUrgencia(lista){
+  const ordem={red:0,orange:1,amber:2,ok:3,'sem-data':4};
+  return [...lista].sort((a,b)=>{
+    const sa=classificarAlerta(a.data).status, sb=classificarAlerta(b.data).status;
+    if(ordem[sa]!==ordem[sb]) return ordem[sa]-ordem[sb];
+    return (a.data||'9999').localeCompare(b.data||'9999');
+  });
+}
+
+function renderAlertasDashboard(){
+  const cont=document.getElementById('dash-alertas-list');
+  if(!cont)return;
+  const lista=ordenarAlertasPorUrgencia(state.alertas||[]);
+  if(lista.length===0){
+    cont.innerHTML='<div class="empty"><p>Nenhum alerta cadastrado. Cadastre em Gestão do Condomínio.</p></div>';
+    return;
+  }
+  cont.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">
+    ${lista.map(a=>{
+      const {status}=classificarAlerta(a.data);
+      const info=ALERTA_STATUS_INFO[status];
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:${info.bg}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${info.cor};display:inline-block;flex-shrink:0"></span>
+          <span style="font-size:13px;font-weight:500">${a.nome}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:12px;color:${info.cor};font-weight:600">${a.data?formatMesAnoAlerta(a.data):'Sem data'} — ${info.label}</span>
+          <button class="btn" style="padding:3px 9px;font-size:11px" onclick="irParaAlertasGestao()">Editar</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function irParaAlertasGestao(){
+  const navBtn=[...document.querySelectorAll('.nav-item')].find(n=>n.getAttribute('onclick')?.includes("'gestao'"));
+  showPanel('gestao', navBtn);
+  setTimeout(()=>document.getElementById('card-alertas-gestao')?.scrollIntoView({behavior:'smooth',block:'center'}),100);
+}
+
+function renderAlertasGestao(){
+  const cont=document.getElementById('tabela-alertas-gestao');
+  if(!cont)return;
+  const lista=state.alertas||[];
+  if(lista.length===0){
+    cont.innerHTML='<div class="empty"><p>Nenhum alerta cadastrado ainda.</p></div>';
+    return;
+  }
+  cont.innerHTML=`<table style="width:100%;border-collapse:collapse">
+    <thead><tr>
+      <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Alerta</th>
+      <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Próxima verificação</th>
+      <th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">Status</th>
+      <th style="width:150px"></th>
+    </tr></thead>
+    <tbody>
+      ${lista.map(a=>{
+        const {status}=classificarAlerta(a.data);
+        const info=ALERTA_STATUS_INFO[status];
+        return `<tr>
+          <td style="padding:6px 8px;font-size:13px">${a.nome}</td>
+          <td style="padding:6px 8px">
+            <input type="month" value="${a.data||''}" onchange="atualizarDataAlerta('${a.id}',this.value)" style="padding:3px 6px;border:1px solid var(--border2);border-radius:5px;font-family:var(--mono);font-size:12px">
+          </td>
+          <td style="padding:6px 8px">
+            <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:${info.cor}">
+              <span style="width:8px;height:8px;border-radius:50%;background:${info.cor};display:inline-block"></span>${info.label}
+            </span>
+          </td>
+          <td style="padding:6px 8px;text-align:right">
+            <button class="btn" style="padding:4px 10px;font-size:12px" onclick="excluirAlerta('${a.id}')">Excluir</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function atualizarDataAlerta(id, novaData){
+  const a=(state.alertas||[]).find(x=>x.id===id);
+  if(!a)return;
+  a.data=novaData;
+  save();
+  renderAlertasGestao();
+  renderAlertasDashboard();
+}
+
+function excluirAlerta(id){
+  const a=(state.alertas||[]).find(x=>x.id===id);
+  if(!a)return;
+  if(!confirm(`Excluir o alerta "${a.nome}"?`))return;
+  state.alertas=state.alertas.filter(x=>x.id!==id);
+  save();
+  renderAlertasGestao();
+  renderAlertasDashboard();
+}
+
+function mostrarFormNovoAlerta(){
+  document.getElementById('form-novo-alerta').style.display='block';
+  document.getElementById('novo-alerta-nome').value='';
+  document.getElementById('novo-alerta-data').value='';
+  document.getElementById('novo-alerta-nome').focus();
+}
+
+function cancelarNovoAlerta(){
+  document.getElementById('form-novo-alerta').style.display='none';
+}
+
+function salvarNovoAlerta(){
+  const nome=document.getElementById('novo-alerta-nome').value.trim();
+  const data=document.getElementById('novo-alerta-data').value;
+  if(!nome){alert('Informe o nome do alerta.');return;}
+  if(!state.alertas) state.alertas=[];
+  state.alertas.push({id:'alerta-'+Date.now(), nome, data});
+  save();
+  cancelarNovoAlerta();
+  renderAlertasGestao();
+  renderAlertasDashboard();
 }
 
 // ==================== DOCUMENTOS ====================
@@ -4782,38 +5018,56 @@ function excluirModelo(id){
 }
 
 // ==================== CONFIG ====================
-function iniciarNovoExercicio(){
+let _viradaAnoCtx = null;
+
+function abrirModalViradaReservas(){
   const novoAno = parseInt(document.getElementById('novo-exercicio').value);
   const anoAtual = state.year;
 
-  if(!confirm(`Confirma a criação do exercício ${novoAno}?\n\nO histórico de ${anoAtual} será preservado. O saldo final de ${anoAtual} (incluindo a reserva do funcionário) será transferido como saldo inicial de Janeiro/${novoAno}.`)) return;
+  if(!novoAno || novoAno<=anoAtual){alert('Informe um ano de exercício válido, maior que o atual.');return;}
 
-  // ── 1. Calcula saldo final do ano que está encerrando ──────
-  // Saldo do último mês fechado
+  // Último mês fechado do ano que está encerrando
   let ultimoMesFechado = -1;
   for(let i = 11; i >= 0; i--){
     if(state.balancetes[anoAtual]?.[i]?.fechado){ ultimoMesFechado = i; break; }
   }
   const m = ultimoMesFechado >= 0 ? ultimoMesFechado : 11;
+
+  const reservaFuncFinal = calcReservaFuncAcum(m);
+  const reservaTaxaFinal = calcReservaTaxaAcum(m);
+
+  _viradaAnoCtx = {novoAno, anoAtual, m, reservaFuncFinal, reservaTaxaFinal};
+
+  document.getElementById('vr-valor-func').textContent = brl(reservaFuncFinal);
+  document.getElementById('vr-valor-taxa').textContent = brl(reservaTaxaFinal);
+  document.querySelector('input[name="vr-func"][value="manter"]').checked = true;
+  document.querySelector('input[name="vr-taxa"][value="manter"]').checked = true;
+
+  showModal('modal-virada-reservas');
+}
+
+function confirmarViradaAno(){
+  if(!_viradaAnoCtx)return;
+  const {novoAno, anoAtual, m, reservaFuncFinal, reservaTaxaFinal} = _viradaAnoCtx;
+
+  if(!confirm(`Confirma a criação do exercício ${novoAno}?\n\nO histórico de ${anoAtual} será preservado. O saldo final de ${anoAtual} será transferido como saldo inicial de Janeiro/${novoAno}.`)) return;
+
+  const manterFunc = document.querySelector('input[name="vr-func"]:checked').value==='manter';
+  const manterTaxa = document.querySelector('input[name="vr-taxa"]:checked').value==='manter';
+
+  // ── 1. Saldo final do ano que está encerrando (dinheiro total, independe da escolha acima) ──
   const saldoFinalAno = calcSaldoAnterior(m) +
     calcTotalReceitas(m) - calcTotalDespesas(m);
 
-  // ── 2. Reserva do funcionário do ano atual ─────────────────
-  // A reserva acumulada vai para o saldo livre (não é perdida)
-  // O novo ano começa do zero na reserva — ela reacumula normalmente
-  const reservaFuncFinal = calcReservaFuncAcum(m);
-  // O saldo inicial do novo ano = saldo total (que já inclui a reserva como dinheiro em caixa)
-  // A reserva do novo ano começa a reacumular a partir de zero em Janeiro
-
-  // ── 3. Cria estrutura de balancetes do novo ano ────────────
+  // ── 2. Cria estrutura de balancetes do novo ano ────────────
   if(!state.balancetes[novoAno]) state.balancetes[novoAno] = {};
 
-  // Janeiro do novo ano começa com o saldo final do ano anterior
-  // (já inclui a reserva do funcionário como dinheiro disponível em caixa)
   state.balancetes[novoAno][0] = {
     fechado: false,
     obs: '',
-    saldoInicial: saldoFinalAno, // saldo inicial explícito para Janeiro
+    saldoInicial: saldoFinalAno, // saldo inicial explícito para Janeiro (é o mesmo dinheiro, independente da escolha de reserva)
+    reservaFuncInicial: manterFunc ? reservaFuncFinal : 0,
+    reservaTaxaInicial: manterTaxa ? reservaTaxaFinal : 0,
     receitas: [],
     despesas: []
   };
@@ -4825,18 +5079,19 @@ function iniciarNovoExercicio(){
     }
   }
 
-  // ── 4. Atualiza feriados para o novo ano ───────────────────
+  // ── 3. Atualiza feriados para o novo ano ───────────────────
   state.feriados = state.feriados.map(f => ({
     ...f, data: f.data.replace(/^\d{4}/, novoAno)
   }));
 
-  // ── 5. Muda para o novo exercício ─────────────────────────
+  // ── 4. Muda para o novo exercício ─────────────────────────
   state.year = novoAno;
   state.currentMonth = 0;
   document.getElementById('current-year').textContent = novoAno;
   document.getElementById('sidebar-year').textContent = novoAno;
 
   save();
+  closeModal('modal-virada-reservas');
   closeModal('modal-config');
   renderDashboard();
   updateCondNome();
@@ -4844,9 +5099,11 @@ function iniciarNovoExercicio(){
   alert(
     `✅ Exercício ${novoAno} criado!\n\n` +
     `Saldo inicial de Janeiro/${novoAno}: ${brl(saldoFinalAno)}\n` +
-    `(inclui R$ ${brl(reservaFuncFinal)} da reserva do funcionário de ${anoAtual}, ` +
-    `que agora faz parte do saldo livre — a reserva reacumula do zero em ${novoAno})`
+    `Reserva Funcionário: ${manterFunc ? `mantida em ${brl(reservaFuncFinal)}, continua acumulando` : 'zerada — valor incorporado ao saldo livre'}\n` +
+    `Reserva Taxa Extra: ${manterTaxa ? `mantida em ${brl(reservaTaxaFinal)}, continua acumulando` : 'zerada — valor incorporado ao saldo livre'}`
   );
+
+  _viradaAnoCtx = null;
 }
 
 function exportarDados(){
@@ -4936,4 +5193,3 @@ document.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
-
