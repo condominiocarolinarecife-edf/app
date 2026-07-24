@@ -1370,34 +1370,14 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- Lançar Despesas Recorrentes em Lote -->
 <div class="modal-overlay" id="modal-lote-despesa">
-  <div class="modal" style="width:min(620px,96vw)">
+  <div class="modal" style="width:min(820px,96vw)">
     <div class="modal-header">
       <div class="modal-title">Lançar Despesas Recorrentes em Lote</div>
       <button class="modal-close" onclick="closeModal('modal-lote-despesa')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="modal-body">
-      <div class="form-group" style="margin-bottom:12px">
-        <label class="form-label">Categoria (despesas recorrentes)</label>
-        <select id="lde-categoria" onchange="mudarCategoriaLoteDespesa()">
-          <optgroup label="Contas Recorrentes">
-            <option value="celpe">CELPE (Energia)</option>
-            <option value="compesa">COMPESA (Água/Esgoto)</option>
-            <option value="seguro">Seguro Condomínio</option>
-            <option value="adm">Taxa Administração</option>
-            <option value="secovi">SECOVI/SIECC/PE</option>
-          </optgroup>
-          <optgroup label="Funcionário">
-            <option value="sal-mensal">Salário Mensal (quinzenas 1 e 2)</option>
-            <option value="vale-al">Vale Alimentação</option>
-            <option value="vale-tr">Vale Transporte</option>
-            <option value="inss">INSS + PIS</option>
-            <option value="fgts">FGTS</option>
-          </optgroup>
-        </select>
-      </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Adicione uma linha para cada mês, informe o valor (e consumo/parcela, se aplicável) e lance todas de uma vez. Cada linha é lançada automaticamente no mês correspondente.</div>
-      <div id="lote-despesa-linhas"></div>
-      <button class="btn" style="margin-top:10px;font-size:12px;padding:5px 10px" onclick="adicionarLinhaLoteDespesa()">+ Adicionar linha</button>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Lançando para <strong id="lde-mes-ano-label"></strong>. Desmarque ou deixe o valor em branco o que não se aplica esse mês — o que for específico só desse mês, lance individualmente em "+ Lançamento".</div>
+      <div id="lote-despesa-linhas" style="overflow-x:auto"></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-lote-despesa')">Cancelar</button>
@@ -2787,196 +2767,116 @@ function saveLoteReceita(){
 }
 
 
-// --- Lançamento de despesas recorrentes em lote ---
-let loteDespesaLinhas=[];
+// --- Lançamento de despesas recorrentes em lote (todas as categorias do mês corrente, de uma vez) ---
 
-// Configuração de cada categoria: tipo de linha e se a referência da descrição é o mês de pagamento (atual) ou o mês anterior
-const LOTE_DESPESA_CATEGORIAS={
-  celpe:        {tipo:'consumo',  unidadeConsumo:'KWh', ref:'anterior'},
-  compesa:      {tipo:'consumo',  unidadeConsumo:'m³',  ref:'anterior'},
-  seguro:       {tipo:'parcela'},
-  adm:          {tipo:'simples',  ref:'atual'},
-  secovi:       {tipo:'simples',  ref:'atual'},
-  'sal-mensal': {tipo:'quinzena'},
-  'vale-al':    {tipo:'simples',  ref:'atual'},
-  'vale-tr':    {tipo:'simples',  ref:'atual'},
-  inss:         {tipo:'reserva',  ref:'anterior'},
-  fgts:         {tipo:'reserva',  ref:'anterior'}
-};
+// Cada linha da tela: chave (id único), rótulo, tipo de campo extra, e se o período padrão é o mês atual ou o mês anterior
+const LOTE_DESPESA_ROWS=[
+  {key:'celpe',        label:'CELPE (Energia)',            tipo:'consumo', unidadeConsumo:'KWh', periodoTipo:'anterior'},
+  {key:'compesa',      label:'COMPESA (Água/Esgoto)',       tipo:'consumo', unidadeConsumo:'m³',  periodoTipo:'anterior'},
+  {key:'sal-mensal-1', label:'Salário - 1ª quinzena',       tipo:'simples',  periodoTipo:'atual'},
+  {key:'sal-mensal-2', label:'Salário - 2ª quinzena',       tipo:'simples',  periodoTipo:'atual'},
+  {key:'vale-al',      label:'Vale Alimentação',            tipo:'simples',  periodoTipo:'atual'},
+  {key:'vale-tr',      label:'Vale Transporte',             tipo:'simples',  periodoTipo:'atual'},
+  {key:'inss',         label:'INSS + PIS',                  tipo:'reserva',  periodoTipo:'anterior'},
+  {key:'fgts',         label:'FGTS',                        tipo:'reserva',  periodoTipo:'anterior'},
+  {key:'seguro',       label:'Seguro Condomínio',           tipo:'parcela'},
+  {key:'adm',          label:'Taxa Administração',          tipo:'simples',  periodoTipo:'atual'},
+  {key:'secovi',       label:'SECOVI/SIECC/PE',             tipo:'simples',  periodoTipo:'atual'}
+];
 
-function categoriaLoteDespesaAtual(){
-  return document.getElementById('lde-categoria').value;
-}
-function tipoLoteDespesaAtual(cat){
-  return (LOTE_DESPESA_CATEGORIAS[cat]||{}).tipo || 'simples';
-}
-
-function coletarLoteDespesaLinhas(){
-  const cat=categoriaLoteDespesaAtual();
-  const tipo=tipoLoteDespesaAtual(cat);
-  loteDespesaLinhas=loteDespesaLinhas.map((_,i)=>{
-    const row={periodo: document.getElementById('lde-periodo-'+i)?.value || ''};
-    if(tipo==='quinzena'){
-      row.valorQ1=document.getElementById('lde-valorq1-'+i)?.value || '';
-      row.valorQ2=document.getElementById('lde-valorq2-'+i)?.value || '';
-    } else {
-      row.valor=document.getElementById('lde-valor-'+i)?.value || '';
-      if(tipo==='consumo') row.consumo=document.getElementById('lde-consumo-'+i)?.value || '';
-      if(tipo==='parcela') row.parcela=document.getElementById('lde-parcela-'+i)?.value || '';
-      if(tipo==='reserva') row.isReserva=document.getElementById('lde-reserva-'+i)?.checked || false;
-    }
-    return row;
-  });
+// A categoria "real" gravada na despesa (as duas linhas de quinzena viram a mesma categoria sal-mensal)
+function categoriaRealLinhaRecorrente(key){
+  if(key==='sal-mensal-1'||key==='sal-mensal-2') return 'sal-mensal';
+  return key;
 }
 
-function renderLoteDespesaHeader(tipo){
-  const th=(txt,align)=>`<th style="text-align:${align||'left'};padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border)">${txt}</th>`;
-  let cols=th('Mês de pagamento');
-  if(tipo==='quinzena') cols+=th('Valor 1ª quinz. (R$)','right')+th('Valor 2ª quinz. (R$)','right');
-  else if(tipo==='consumo') cols+=th('Consumo','right')+th('Valor (R$)','right');
-  else if(tipo==='parcela') cols+=th('Parcela')+th('Valor (R$)','right');
-  else if(tipo==='reserva') cols+=th('Valor (R$)','right')+th('Férias/13º','center');
-  else cols+=th('Valor (R$)','right');
-  cols+='<th style="width:32px"></th>';
-  return cols;
+function periodoDefaultLinhaRecorrente(row){
+  const m=state.currentMonth, ano=state.year;
+  const mes=String(m+1).padStart(2,'0');
+  const mRef = m===0 ? `12/${ano-1}` : `${String(m).padStart(2,'0')}/${ano}`;
+  return row.periodoTipo==='anterior' ? mRef : `${mes}/${ano}`;
 }
 
-function renderLoteDespesaRow(l,i,tipo){
-  const inputStyle='padding:3px 6px;border:1px solid var(--border2);border-radius:5px';
-  const mesInput=`<input type="month" id="lde-periodo-${i}" value="${l.periodo||''}" style="width:130px;${inputStyle};font-family:var(--mono);font-size:12px">`;
-  const delBtn=`<button class="btn" style="padding:2px 8px;font-size:12px" onclick="removerLinhaLoteDespesa(${i})">✕</button>`;
-  if(tipo==='quinzena'){
-    return `<tr>
-      <td style="padding:5px 8px">${mesInput}</td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valorq1-${i}" value="${l.valorQ1||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valorq2-${i}" value="${l.valorQ2||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-      <td style="padding:5px 8px;text-align:center">${delBtn}</td>
-    </tr>`;
-  }
-  if(tipo==='consumo'){
-    return `<tr>
-      <td style="padding:5px 8px">${mesInput}</td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" id="lde-consumo-${i}" value="${l.consumo||''}" placeholder="0" style="width:80px;text-align:right;${inputStyle};font-size:12px"></td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${i}" value="${l.valor||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-      <td style="padding:5px 8px;text-align:center">${delBtn}</td>
-    </tr>`;
-  }
-  if(tipo==='parcela'){
-    return `<tr>
-      <td style="padding:5px 8px">${mesInput}</td>
-      <td style="padding:5px 8px"><input type="text" id="lde-parcela-${i}" value="${l.parcela||''}" placeholder="ex: 03/10" style="width:80px;${inputStyle};font-size:12px"></td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${i}" value="${l.valor||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-      <td style="padding:5px 8px;text-align:center">${delBtn}</td>
-    </tr>`;
-  }
-  if(tipo==='reserva'){
-    return `<tr>
-      <td style="padding:5px 8px">${mesInput}</td>
-      <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${i}" value="${l.valor||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-      <td style="padding:5px 8px;text-align:center"><input type="checkbox" id="lde-reserva-${i}" ${l.isReserva?'checked':''} title="Referente a férias ou 13º — desconta da reserva do funcionário"></td>
-      <td style="padding:5px 8px;text-align:center">${delBtn}</td>
-    </tr>`;
-  }
-  // simples
-  return `<tr>
-    <td style="padding:5px 8px">${mesInput}</td>
-    <td style="padding:5px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${i}" value="${l.valor||''}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
-    <td style="padding:5px 8px;text-align:center">${delBtn}</td>
-  </tr>`;
-}
-
-function renderLoteDespesaTable(){
-  const cat=categoriaLoteDespesaAtual();
-  const tipo=tipoLoteDespesaAtual(cat);
-  const cont=document.getElementById('lote-despesa-linhas');
-  cont.innerHTML=`
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr>${renderLoteDespesaHeader(tipo)}</tr></thead>
-      <tbody>${loteDespesaLinhas.map((l,i)=>renderLoteDespesaRow(l,i,tipo)).join('')}</tbody>
-    </table>
-    ${tipo==='quinzena'?'<div style="font-size:11px;color:var(--text3);margin-top:6px">Cada linha lança até 2 despesas (1ª e 2ª quinzena) no mês selecionado. Deixe um dos valores em branco se só precisar lançar uma quinzena.</div>':''}`;
-}
-
-function abrirModalLoteDespesa(){
-  loteDespesaLinhas=[{}];
-  document.getElementById('lde-categoria').selectedIndex=0;
-  renderLoteDespesaTable();
-  showModal('modal-lote-despesa');
-}
-
-function mudarCategoriaLoteDespesa(){
-  // Os campos mudam de estrutura entre categorias; reinicia as linhas para evitar dados inconsistentes
-  loteDespesaLinhas=[{}];
-  renderLoteDespesaTable();
-}
-
-function adicionarLinhaLoteDespesa(){
-  coletarLoteDespesaLinhas();
-  loteDespesaLinhas.push({});
-  renderLoteDespesaTable();
-}
-
-function removerLinhaLoteDespesa(i){
-  coletarLoteDespesaLinhas();
-  loteDespesaLinhas.splice(i,1);
-  if(loteDespesaLinhas.length===0) loteDespesaLinhas.push({});
-  renderLoteDespesaTable();
-}
-
-// Gera a descrição igual à do lançamento individual, a partir do mês de pagamento (yyyy-mm)
-function gerarDescLoteDespesa(cat, periodoYYYYMM, extra){
+function gerarDescLinhaRecorrente(key, periodo, extra){
   extra=extra||{};
-  const cfg=LOTE_DESPESA_CATEGORIAS[cat]||{};
-  const [y,m]=periodoYYYYMM.split('-').map(Number);
-  const mesAtualStr=`${String(m).padStart(2,'0')}/${y}`;
-  let refM=m-1, refY=y;
-  if(refM===0){refM=12;refY=y-1;}
-  const refStr=`${String(refM).padStart(2,'0')}/${refY}`;
-  const periodoTxt=cfg.ref==='anterior' ? refStr : mesAtualStr;
-  switch(cat){
-    case 'celpe':    return `CELPE (${periodoTxt})`+(extra.consumo?` - consumo: ${extra.consumo} KWh`:'');
-    case 'compesa':  return `COMPESA (${periodoTxt})`+(extra.consumo?` - consumo: ${extra.consumo} m³`:'');
-    case 'seguro':   return `Seguro condomínio`+(extra.parcela?` (parcela ${extra.parcela})`:'');
-    case 'adm':      return `Taxa administração (${periodoTxt})`;
-    case 'secovi':   return `SECOVI/SIECC/PE (${periodoTxt})`;
-    case 'vale-al':  return `Vale alimentação (${periodoTxt})`;
-    case 'vale-tr':  return `Vale transporte (${periodoTxt})`;
-    case 'inss':     return `INSS e PIS (${periodoTxt})`;
-    case 'fgts':     return `FGTS (${periodoTxt})`;
+  switch(key){
+    case 'celpe':        return `CELPE (${periodo})`+(extra.consumo?` - consumo: ${extra.consumo} KWh`:'');
+    case 'compesa':      return `COMPESA (${periodo})`+(extra.consumo?` - consumo: ${extra.consumo} m³`:'');
+    case 'sal-mensal-1': return `Salários - 1ª quinzena (${periodo})`;
+    case 'sal-mensal-2': return `Salários - 2ª quinzena (${periodo})`;
+    case 'vale-al':      return `Vale alimentação (${periodo})`;
+    case 'vale-tr':       return `Vale transporte (${periodo})`;
+    case 'inss':          return `INSS e PIS (${periodo})`;
+    case 'fgts':          return `FGTS (${periodo})`;
+    case 'seguro':        return `Seguro condomínio`+(extra.parcela?` (parcela ${extra.parcela})`:'');
+    case 'adm':           return `Taxa administração (${periodo})`;
+    case 'secovi':        return `SECOVI/SIECC/PE (${periodo})`;
     default: return '';
   }
 }
 
+function renderLinhaRecorrente(row){
+  const m=state.currentMonth, ano=state.year;
+  const mes=String(m+1).padStart(2,'0');
+  const dataDefault=`${ano}-${mes}-05`;
+  const periodo=periodoDefaultLinhaRecorrente(row);
+  const inputStyle='padding:3px 6px;border:1px solid var(--border2);border-radius:5px';
+  let detalheHtml='';
+  if(row.tipo==='consumo'){
+    detalheHtml=`<input type="number" id="lde-consumo-${row.key}" placeholder="Consumo (${row.unidadeConsumo})" style="width:110px;${inputStyle};font-size:12px">`;
+  } else if(row.tipo==='parcela'){
+    detalheHtml=`<input type="text" id="lde-parcela-${row.key}" placeholder="ex: 3/10" style="width:80px;${inputStyle};font-size:12px">`;
+  } else if(row.tipo==='reserva'){
+    detalheHtml=`<label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="lde-reserva-${row.key}"> Férias/13º</label>`;
+  }
+  return `<tr>
+    <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="lde-incluir-${row.key}" checked></td>
+    <td style="padding:6px 8px;font-size:13px;white-space:nowrap">${row.label}</td>
+    <td style="padding:6px 8px"><input type="text" id="lde-periodo-${row.key}" value="${periodo}" style="width:85px;${inputStyle};font-family:var(--mono);font-size:12px"></td>
+    <td style="padding:6px 8px">${detalheHtml}</td>
+    <td style="padding:6px 8px"><input type="date" id="lde-data-${row.key}" value="${dataDefault}" style="${inputStyle};font-size:12px"></td>
+    <td style="padding:6px 8px;text-align:right"><input type="number" step="0.01" id="lde-valor-${row.key}" placeholder="0,00" style="width:100px;text-align:right;${inputStyle};font-family:var(--mono);font-size:13px"></td>
+  </tr>`;
+}
+
+function renderLoteDespesaTable(){
+  const th=(txt,align)=>`<th style="text-align:${align||'left'};padding:6px 8px;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);white-space:nowrap">${txt}</th>`;
+  const cont=document.getElementById('lote-despesa-linhas');
+  cont.innerHTML=`
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        ${th('Incluir','center')}${th('Categoria')}${th('Período')}${th('Detalhe')}${th('Data pagto.')}${th('Valor (R$)','right')}
+      </tr></thead>
+      <tbody>${LOTE_DESPESA_ROWS.map(row=>renderLinhaRecorrente(row)).join('')}</tbody>
+    </table>`;
+  const labelEl=document.getElementById('lde-mes-ano-label');
+  if(labelEl) labelEl.textContent=`${MONTHS[state.currentMonth]}/${state.year}`;
+}
+
+function abrirModalLoteDespesa(){
+  renderLoteDespesaTable();
+  showModal('modal-lote-despesa');
+}
+
 function saveLoteDespesas(){
-  coletarLoteDespesaLinhas();
-  const cat=categoriaLoteDespesaAtual();
-  const tipo=tipoLoteDespesaAtual(cat);
+  const m=state.currentMonth, ano=state.year;
+  if(!state.balancetes[ano]) state.balancetes[ano]={};
+  if(!state.balancetes[ano][m]) state.balancetes[ano][m]={receitas:[],despesas:[],obs:'',fechado:false};
+  const destino=state.balancetes[ano][m].despesas;
   let count=0;
-  loteDespesaLinhas.forEach(l=>{
-    if(!l.periodo) return;
-    const [y,m]=l.periodo.split('-').map(Number);
-    const monthIdx=m-1;
-    if(!state.balancetes[y]) state.balancetes[y]={};
-    if(!state.balancetes[y][monthIdx]) state.balancetes[y][monthIdx]={receitas:[],despesas:[],obs:'',fechado:false};
-    const destino=state.balancetes[y][monthIdx].despesas;
-
-    if(tipo==='quinzena'){
-      const mesAtualStr=`${String(m).padStart(2,'0')}/${y}`;
-      if(l.valorQ1){
-        destino.push({categoria:cat, valor:parseFloat(l.valorQ1)||0, data:`${y}-${String(m).padStart(2,'0')}-12`, desc:`Salários - 1ª quinzena (${mesAtualStr})`});
-        count++;
-      }
-      if(l.valorQ2){
-        destino.push({categoria:cat, valor:parseFloat(l.valorQ2)||0, data:`${y}-${String(m).padStart(2,'0')}-27`, desc:`Salários - 2ª quinzena (${mesAtualStr})`});
-        count++;
-      }
-      return;
-    }
-
-    if(!l.valor) return;
-    const desc=gerarDescLoteDespesa(cat,l.periodo,{consumo:l.consumo,parcela:l.parcela});
-    const item={categoria:cat, valor:parseFloat(l.valor)||0, data:`${y}-${String(m).padStart(2,'0')}-05`, desc};
-    if(tipo==='reserva') item.isReservaFunc=!!l.isReserva;
+  LOTE_DESPESA_ROWS.forEach(row=>{
+    const incluir=document.getElementById('lde-incluir-'+row.key)?.checked;
+    if(!incluir) return;
+    const valor=document.getElementById('lde-valor-'+row.key)?.value;
+    if(!valor) return; // pula linhas sem valor preenchido
+    const periodo=document.getElementById('lde-periodo-'+row.key)?.value || '';
+    const data=document.getElementById('lde-data-'+row.key)?.value || '';
+    const consumo=document.getElementById('lde-consumo-'+row.key)?.value || '';
+    const parcela=document.getElementById('lde-parcela-'+row.key)?.value || '';
+    const isReserva=document.getElementById('lde-reserva-'+row.key)?.checked || false;
+    const desc=gerarDescLinhaRecorrente(row.key, periodo, {consumo, parcela});
+    const item={categoria:categoriaRealLinhaRecorrente(row.key), valor:parseFloat(valor)||0, data, desc};
+    if(row.tipo==='reserva') item.isReservaFunc=isReserva;
     destino.push(item);
     count++;
   });
@@ -5193,3 +5093,4 @@ document.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
+
