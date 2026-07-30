@@ -416,8 +416,8 @@ function sair() {
 const STORAGE_KEY   = 'cond_state_v2';
 const BACKUP_VERSION = '2.0';
 // URL/chave do Apps Script já existente (planilha "Banco de Dados edf
-// carolina") — não precisam mudar, só o código do script foi atualizado.
-const SHEETS_URL    = 'https://script.google.com/macros/s/AKfycbz2kN8l8ORWrViwXTWLt_72QWY-b6OxpFnbWRF_vmXdQiKHYd5r_WMPTx6sQ2w4rERe/exec';
+// carolina") — atualizada em 30/07/2026 após nova implantação.
+const SHEETS_URL    = 'https://script.google.com/macros/s/AKfycbzvWAXINvD7ChlGiRAHO2B_mOeeEAlVw6DYalwpK_idYqmfMfGphH_wHgrLsppdF5KlQA/exec';
 const SHEETS_KEY    = 'carolina2025';
 
 let _saveTimer     = null;   // debounce do save na nuvem
