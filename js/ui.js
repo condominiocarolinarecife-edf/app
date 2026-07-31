@@ -65,9 +65,32 @@ function renderDashboard(){
     const cls=c.status==='Isento'?'unit-cell exempt':c.status==='Inadimplente'?'unit-cell late':'unit-cell paid';
     units.innerHTML+=`<div class="${cls}"><div class="apt">${c.apto}</div><div class="val">${c.status==='Isento'?'Isento':c.status==='Inadimplente'?'Atraso':brl(c.taxa)}</div></div>`;
   });
+
+  // Texto "Exercício XXXX — atualizado em <mês do balancete atual>"
+  const periodoEl=document.getElementById('dash-period');
+  if(periodoEl) periodoEl.textContent=`Exercício ${state.year} — atualizado em ${MONTHS[state.currentMonth].toLowerCase()}`;
+
+  // Cards de receita/despesa/saldo do mês atual (currentMonth), não mais fixos
+  const totalR=calcTotalReceitas(state.currentMonth);
+  const totalD=calcTotalDespesas(state.currentMonth);
+  const saldoMes=totalR-totalD;
+  const saldoAcum=calcSaldoAnterior(state.currentMonth)+saldoMes;
+  const reservaAcum=calcReservaFuncAcum(state.currentMonth)+calcReservaTaxaAcum(state.currentMonth);
+  const mesLabel=`${MONTHS[state.currentMonth]} ${state.year}`;
+
+  const setTxt=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  setTxt('d-receita',brl(totalR));
+  setTxt('d-receita-sub',mesLabel);
+  setTxt('d-despesa',brl(totalD));
+  setTxt('d-despesa-sub',mesLabel);
+  setTxt('d-saldo',brl(saldoMes));
+  setTxt('d-saldo-sub',saldoMes>=0?'Positivo':'Negativo');
+  setTxt('d-acumulado',brl(saldoAcum));
+  setTxt('d-reserva-sub',`Reserva: ${brl(reservaAcum)}`);
+
   const chart=document.getElementById('dash-chart');
-  const data=[4861,4961,0,0,0,0,0,0,0,0,0,0];
-  const desp=[4185,4265,0,0,0,0,0,0,0,0,0,0];
+  const data=MONTHS.map((_,i)=>calcTotalReceitas(i));
+  const desp=MONTHS.map((_,i)=>calcTotalDespesas(i));
   const maxV=Math.max(...data,...desp,100);
   chart.innerHTML=data.map((v,i)=>`<div style="flex:1;display:flex;gap:2px;align-items:flex-end"><div class="mini-bar receita" style="height:${Math.max(4,(v/maxV)*56)}px;flex:1"></div><div class="mini-bar despesa" style="height:${Math.max(4,(desp[i]/maxV)*56)}px;flex:1"></div></div>`).join('');
   renderAlertasDashboard();
