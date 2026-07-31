@@ -63,6 +63,7 @@
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .card-title{font-size:14px;font-weight:600;color:var(--text)}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.grid-5{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 .metric-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
@@ -176,7 +177,7 @@ textarea{resize:vertical;min-height:80px}
   #sidebar{transform:translateX(-100%);transition:transform .25s}
   #sidebar.open{transform:translateX(0)}
   #main{margin-left:0}
-  .grid-4,.grid-3{grid-template-columns:repeat(2,1fr)}
+  .grid-4,.grid-3,.grid-5{grid-template-columns:repeat(2,1fr)}
   .grid-2{grid-template-columns:1fr}
   .form-row,.form-row-3{grid-template-columns:1fr}
 }
@@ -410,7 +411,7 @@ textarea{resize:vertical;min-height:80px}
     <div id="panel-dashboard" class="panel active">
       <div class="section-title">Visão Geral</div>
       <div class="section-sub" id="dash-period">Exercício 2026 — atualizado em maio</div>
-      <div class="grid-4" style="margin-bottom:20px">
+      <div class="grid-5" style="margin-bottom:20px">
         <div class="metric-card blue">
           <div class="metric-label">Receita do Mês</div>
           <div class="metric-value" id="d-receita">R$ 4.861</div>
@@ -430,6 +431,11 @@ textarea{resize:vertical;min-height:80px}
           <div class="metric-label">Saldo Acumulado</div>
           <div class="metric-value" id="d-acumulado">R$ 1.577</div>
           <div class="metric-sub" id="d-reserva-sub">Reserva: R$ 350</div>
+        </div>
+        <div class="metric-card" style="background:var(--green-light)">
+          <div class="metric-label">Saldo Livre</div>
+          <div class="metric-value" id="d-livre" style="color:var(--green)">R$ 1.227</div>
+          <div class="metric-sub">Já sem as reservas</div>
         </div>
       </div>
       <div class="grid-2" style="margin-bottom:20px">
