@@ -87,6 +87,7 @@ function renderDashboard(){
   setTxt('d-saldo-sub',saldoMes>=0?'Positivo':'Negativo');
   setTxt('d-acumulado',brl(saldoAcum));
   setTxt('d-reserva-sub',`Reserva: ${brl(reservaAcum)}`);
+  setTxt('d-livre',brl(saldoAcum-reservaAcum));
 
   const chart=document.getElementById('dash-chart');
   const data=MONTHS.map((_,i)=>calcTotalReceitas(i));
