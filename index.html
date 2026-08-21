@@ -508,6 +508,10 @@ textarea{resize:vertical;min-height:80px}
           <div class="section-sub">Gestão financeira mês a mês</div>
         </div>
         <div style="display:flex;gap:8px">
+          <button class="btn" onclick="abrirModalImportarExtrato()">
+            <svg fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Importar Extrato
+          </button>
           <button class="btn" onclick="exportBalancete('resumido')">
             <svg fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             PDF Resumido
@@ -1370,6 +1374,58 @@ textarea{resize:vertical;min-height:80px}
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-lote-receita')">Cancelar</button>
       <button class="btn primary" onclick="saveLoteReceita()">Lançar Todas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Importar Extrato Bancário -->
+<div class="modal-overlay" id="modal-importar-extrato">
+  <div class="modal" style="width:min(960px,97vw)">
+    <div class="modal-header">
+      <div class="modal-title">Importar Extrato Bancário</div>
+      <button class="modal-close" onclick="closeModal('modal-importar-extrato')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+
+      <div id="extrato-step-upload">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">
+          Selecione o <strong>CSV</strong> do extrato bancário do período (no app do Cora: exportar extrato → CSV).
+          O sistema lê as transações, tenta identificar a unidade/categoria de cada uma — você confere, ajusta o
+          que precisar e confirma o lançamento de todas de uma vez, no mês selecionado atualmente
+          (<strong id="extrato-mes-alvo"></strong>). Isso <strong>não apaga</strong> nenhum lançamento já existente.
+        </div>
+        <input type="file" id="extrato-file-input" accept=".csv" onchange="processarExtratoArquivo(this.files[0])">
+        <div id="extrato-loading" style="display:none;margin-top:12px;font-size:13px;color:var(--text3)">Lendo o arquivo…</div>
+        <div id="extrato-erro" style="display:none;margin-top:12px;font-size:13px;color:var(--red);background:var(--red-light);padding:10px 12px;border-radius:8px"></div>
+      </div>
+
+      <div id="extrato-step-validacao" style="display:none">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+          <strong id="extrato-count"></strong> transações encontradas. Confira categoria e unidade sugeridas,
+          ajuste a descrição e o valor se precisar, e desmarque o que não quer importar.
+        </div>
+        <div style="max-height:440px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="position:sticky;top:0;background:var(--surface2);z-index:1">
+                <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border)">Incluir</th>
+                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">Data</th>
+                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">Tipo</th>
+                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">Categoria</th>
+                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">Unidade</th>
+                <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">Descrição</th>
+                <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)">Valor (R$)</th>
+              </tr>
+            </thead>
+            <tbody id="extrato-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer" id="extrato-footer-validacao" style="display:none">
+      <button class="btn" onclick="closeModal('modal-importar-extrato')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarImportacaoExtrato()">Confirmar Importação</button>
     </div>
   </div>
 </div>
