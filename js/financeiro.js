@@ -1316,3 +1316,284 @@ function renderVT(){
 
 function calcVT(){renderVT();}
 
+// ==================== IMPORTAÇÃO DE EXTRATO BANCÁRIO ====================
+const CATEGORIAS_RECEITA_EXTRATO=[
+  {v:'taxa-mensal',l:'Taxa Mensal'},
+  {v:'taxa-extra',l:'Taxa Extra'},
+  {v:'atraso',l:'Recebimento em Atraso'},
+  {v:'outras',l:'Outras Receitas'}
+];
+const CATEGORIAS_DESPESA_EXTRATO=[
+  {v:'sal-mensal',l:'Salário Mensal'},
+  {v:'sal-ferias',l:'Férias'},
+  {v:'sal-13',l:'13º Salário'},
+  {v:'vale-al',l:'Vale Alimentação'},
+  {v:'vale-tr',l:'Vale Transporte'},
+  {v:'inss',l:'INSS/PIS'},
+  {v:'fgts',l:'FGTS'},
+  {v:'celpe',l:'CELPE (Energia)'},
+  {v:'compesa',l:'COMPESA (Água/Esgoto)'},
+  {v:'seguro',l:'Seguro Condomínio'},
+  {v:'adm',l:'Taxa Administração'},
+  {v:'secovi',l:'SECOVI/Sindical'},
+  {v:'agua',l:'Água (galão)'},
+  {v:'obras',l:'Obras e Manutenção'},
+  {v:'outros',l:'Outras Despesas'}
+];
+
+let extratoRows=[];
+
+function abrirModalImportarExtrato(){
+  showModal('modal-importar-extrato'); // já dispara resetModalImportarExtrato() (ver ui.js)
+}
+
+function normalizarTextoExtrato(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+
+const STOPWORDS_NOME_EXTRATO=new Set(['de','da','do','das','dos','e','ltda','me','sa','s.a','eireli','administradora','associacao','condominio']);
+function algumaPalavraBate(nomeCadastro,txtNormalizado){
+  const palavras=normalizarTextoExtrato(nomeCadastro).split(/[^a-z0-9]+/).filter(p=>p.length>=4 && !STOPWORDS_NOME_EXTRATO.has(p));
+  return palavras.some(p=>txtNormalizado.includes(p));
+}
+
+function parseDataBRparaISO(dataBR){
+  // "27/07/2026" -> "2026-07-27"
+  const m=(dataBR||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m) return '';
+  return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+
+function resetModalImportarExtrato(){
+  extratoRows=[];
+  document.getElementById('extrato-step-upload').style.display='';
+  document.getElementById('extrato-step-validacao').style.display='none';
+  document.getElementById('extrato-footer-validacao').style.display='none';
+  document.getElementById('extrato-loading').style.display='none';
+  document.getElementById('extrato-erro').style.display='none';
+  const fi=document.getElementById('extrato-file-input');
+  if(fi) fi.value='';
+  const alvoEl=document.getElementById('extrato-mes-alvo');
+  if(alvoEl) alvoEl.textContent=`${MONTHS[state.currentMonth]}/${state.year}`;
+}
+
+function mostrarErroExtrato(msg){
+  const erroEl=document.getElementById('extrato-erro');
+  erroEl.textContent=msg;
+  erroEl.style.display='block';
+  document.getElementById('extrato-loading').style.display='none';
+}
+
+function processarExtratoArquivo(file){
+  if(!file) return;
+  document.getElementById('extrato-erro').style.display='none';
+  document.getElementById('extrato-loading').style.display='block';
+
+  const nome=file.name.toLowerCase();
+  if(!nome.endsWith('.csv')){
+    mostrarErroExtrato('Por enquanto só é possível importar o extrato em CSV. No app do banco/Cora, exporte o extrato do período como CSV (em vez de PDF) e envie esse arquivo aqui.');
+    return;
+  }
+
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const texto=e.target.result.replace(/^\uFEFF/,''); // remove BOM se houver
+      const transacoes=parseCSVExtrato(texto);
+      if(!transacoes.length){
+        mostrarErroExtrato('Não encontrei nenhuma transação nesse arquivo. Confira se é o CSV correto exportado do banco.');
+        return;
+      }
+      extratoRows=transacoes.map(t=>sugerirLancamento(t));
+      renderExtratoTable();
+      document.getElementById('extrato-step-upload').style.display='none';
+      document.getElementById('extrato-step-validacao').style.display='';
+      document.getElementById('extrato-footer-validacao').style.display='flex';
+      document.getElementById('extrato-count').textContent=extratoRows.length;
+    }catch(err){
+      mostrarErroExtrato('Não consegui ler esse arquivo: '+err.message);
+    }
+  };
+  reader.onerror=()=>mostrarErroExtrato('Erro ao ler o arquivo.');
+  reader.readAsText(file,'UTF-8');
+}
+
+function parseCSVExtrato(texto){
+  const linhas=texto.split(/\r?\n/).filter(l=>l.trim().length);
+  if(linhas.length<2) return [];
+  // Espera cabeçalho: Data,Transação,Tipo Transação,Identificação,Valor
+  const out=[];
+  for(let i=1;i<linhas.length;i++){
+    const campos=linhas[i].split(',');
+    if(campos.length<5) continue;
+    const [data,transacao,tipo,identificacao,valorStr]=[
+      campos[0], campos[1], campos[2], campos[3], campos.slice(4).join(',')
+    ];
+    const valor=parseFloat(valorStr.replace(',','.'));
+    if(!data || isNaN(valor)) continue;
+    out.push({
+      data:data.trim(),
+      transacao:(transacao||'').trim(),
+      tipo:(tipo||'').trim().toUpperCase(),
+      identificacao:(identificacao||'').trim(),
+      valor
+    });
+  }
+  return out;
+}
+
+function sugerirLancamento(t){
+  const isReceita=t.tipo.includes('CR')||t.valor>0; // CRÉDITO
+  const dataISO=parseDataBRparaISO(t.data);
+  const base={
+    incluir:true,
+    dataISO,
+    tipo:isReceita?'receita':'despesa',
+    valor:Math.abs(t.valor),
+    origemTexto:`${t.transacao} — ${t.identificacao}`
+  };
+
+  if(isReceita) return Object.assign(base, sugerirReceita(t));
+  return Object.assign(base, sugerirDespesa(t));
+}
+
+function sugerirReceita(t){
+  const m=t.identificacao.match(/Apto\s*(\d+)/i);
+  const unidade=m?m[1]:'';
+  const condomino=state.condominos.find(c=>c.apto===unidade);
+  const mesLabel=`${MONTHS[state.currentMonth]}/${state.year}`;
+
+  if(condomino){
+    // Bate com a taxa mensal cadastrada?
+    if(Math.abs(t.valor-Number(condomino.taxa||0))<0.02){
+      return {categoria:'taxa-mensal', unidade, desc:`Taxa mensal ${mesLabel}`};
+    }
+    // Bate com alguma taxa extra ativa?
+    const taxaExtra=(state.taxasExtras||[]).find(te=>Math.abs(t.valor-Number(te.valorUnit||0))<0.02);
+    if(taxaExtra){
+      return {categoria:'taxa-extra', unidade, desc:taxaExtra.desc};
+    }
+    if(condomino.status==='Inadimplente'){
+      return {categoria:'atraso', unidade, desc:`Recebimento em atraso — Apto ${unidade}`};
+    }
+    return {categoria:'outras', unidade, desc:`Apto ${unidade} — ${t.transacao}`};
+  }
+  return {categoria:'outras', unidade:'', desc:t.identificacao||t.transacao};
+}
+
+function sugerirDespesa(t){
+  const txt=normalizarTextoExtrato(t.transacao+' '+t.identificacao);
+
+  const regras=[
+    {re:/pluxee/, categoria:'vale-al', desc:'Vale alimentação'},
+    {re:/vale transporte|sind das emp de transp/, categoria:'vale-tr', desc:'Vale transporte'},
+    {re:/darf/, categoria:'inss', desc:'INSS/FGTS (DARF) — confira se é INSS ou FGTS'},
+    {re:/sind emp vend|secovi/, categoria:'secovi', desc:'SECOVI/SIECC/PE'},
+    {re:/tokio marine|segurad/, categoria:'seguro', desc:'Seguro condomínio'},
+    {re:/compesa/, categoria:'compesa', desc:'COMPESA'},
+    {re:/celpe|companhia ene/, categoria:'celpe', desc:'CELPE'},
+    {re:/tarifa|saque/, categoria:'outros', desc:'Tarifa/saque bancário'},
+    {re:/compra no debito/, categoria:'outros', desc:'Compra no débito'},
+  ];
+  for(const r of regras){
+    if(r.re.test(txt)) return {categoria:r.categoria, unidade:'', desc:r.desc};
+  }
+
+  // Nome bate com funcionário cadastrado?
+  const func=(state.funcionarios||[]).find(f=>f.nome && algumaPalavraBate(f.nome,txt));
+  if(func){
+    return {categoria:'sal-mensal', unidade:'', desc:`${func.nome} — confira se é salário, VT/VA ou reembolso de obra`};
+  }
+
+  // Nome bate com fornecedor cadastrado?
+  const forn=(state.fornecedores||[]).find(f=>f.nome && algumaPalavraBate(f.nome,txt));
+  if(forn){
+    const servTxt=normalizarTextoExtrato(forn.servico||'');
+    let cat='outros';
+    if(/administra|funcionari|contabil|folha/.test(servTxt)) cat='adm';
+    else if(/obra|manuten|reparo|reforma/.test(servTxt)) cat='obras';
+    return {categoria:cat, unidade:'', desc:`${forn.nome} — ${forn.servico||''}`};
+  }
+
+  return {categoria:'outros', unidade:'', desc:`${t.transacao} — ${t.identificacao}`};
+}
+
+function optsCategoria(tipo,selecionada){
+  const lista=tipo==='receita'?CATEGORIAS_RECEITA_EXTRATO:CATEGORIAS_DESPESA_EXTRATO;
+  return lista.map(c=>`<option value="${c.v}"${c.v===selecionada?' selected':''}>${c.l}</option>`).join('');
+}
+
+function optsUnidade(selecionada){
+  return '<option value="">—</option>'+state.condominos.map(c=>`<option value="${c.apto}"${c.apto===selecionada?' selected':''}>${c.apto}</option>`).join('');
+}
+
+function renderExtratoTable(){
+  const tbody=document.getElementById('extrato-tbody');
+  tbody.innerHTML=extratoRows.map((r,i)=>`
+    <tr style="${r.incluir?'':'opacity:.45'}">
+      <td style="text-align:center;padding:4px 8px;border-bottom:1px solid var(--border)">
+        <input type="checkbox" ${r.incluir?'checked':''} onchange="atualizarExtratoRow(${i},'incluir',this.checked)">
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
+        <input type="date" value="${r.dataISO}" style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'dataISO',this.value)">
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
+        <select style="font-size:12px;padding:3px" onchange="mudarTipoExtratoRow(${i},this.value)">
+          <option value="receita"${r.tipo==='receita'?' selected':''}>Receita</option>
+          <option value="despesa"${r.tipo==='despesa'?' selected':''}>Despesa</option>
+        </select>
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
+        <select style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'categoria',this.value)">
+          ${optsCategoria(r.tipo,r.categoria)}
+        </select>
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
+        ${r.tipo==='receita'?`<select style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'unidade',this.value)">${optsUnidade(r.unidade)}</select>`:'<span style="color:var(--text3)">—</span>'}
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
+        <input type="text" value="${(r.desc||'').replace(/"/g,'&quot;')}" style="font-size:12px;padding:3px;width:100%" onchange="atualizarExtratoRow(${i},'desc',this.value)">
+      </td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:var(--mono)">
+        <input type="number" step="0.01" value="${r.valor}" style="font-size:12px;padding:3px;width:80px;text-align:right" onchange="atualizarExtratoRow(${i},'valor',parseFloat(this.value)||0)">
+      </td>
+    </tr>`).join('');
+}
+
+function atualizarExtratoRow(i,campo,valor){
+  extratoRows[i][campo]=valor;
+  if(campo==='incluir'||campo==='categoria') renderExtratoTable();
+}
+
+function mudarTipoExtratoRow(i,novoTipo){
+  extratoRows[i].tipo=novoTipo;
+  extratoRows[i].categoria=novoTipo==='receita'?'outras':'outros';
+  if(novoTipo==='despesa') extratoRows[i].unidade='';
+  renderExtratoTable();
+}
+
+function confirmarImportacaoExtrato(){
+  const m=state.currentMonth;
+  if(!state.balancetes[state.year]) state.balancetes[state.year]={};
+  if(!state.balancetes[state.year][m]) state.balancetes[state.year][m]={receitas:[],despesas:[],obs:'',fechado:false};
+  const bal=state.balancetes[state.year][m];
+  if(!bal.receitas) bal.receitas=[];
+  if(!bal.despesas) bal.despesas=[];
+
+  let incluidas=0;
+  extratoRows.forEach(r=>{
+    if(!r.incluir) return;
+    if(r.tipo==='receita'){
+      bal.receitas.push({categoria:r.categoria, unidade:r.unidade||'', valor:r.valor, data:r.dataISO, desc:r.desc||''});
+    }else{
+      bal.despesas.push({categoria:r.categoria, valor:r.valor, data:r.dataISO, desc:r.desc||''});
+    }
+    incluidas++;
+  });
+
+  save();
+  closeModal('modal-importar-extrato');
+  renderBalancete();
+  alert(`${incluidas} lançamento(s) importado(s) com sucesso!`);
+}
+
