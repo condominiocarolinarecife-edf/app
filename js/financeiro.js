@@ -1419,11 +1419,22 @@ function processarExtratoArquivo(file){
       }
       const ctx={contadorSalario:{}, contadorTaxaExtra:{}, parcelaSeguro:sugerirParcelaSeguro()};
       extratoRows=transacoes.map(t=>sugerirLancamento(t,ctx));
+      extratoRows=ordenarExtratoRows(extratoRows);
       renderExtratoTable();
       document.getElementById('extrato-step-upload').style.display='none';
       document.getElementById('extrato-step-validacao').style.display='';
       document.getElementById('extrato-footer-validacao').style.display='flex';
       document.getElementById('extrato-count').textContent=extratoRows.length;
+
+      const barraParcela=document.getElementById('extrato-parcela-massa-bar');
+      const primeiraTaxaExtra=extratoRows.find(r=>r.categoria==='taxa-extra');
+      if(primeiraTaxaExtra){
+        barraParcela.style.display='flex';
+        document.getElementById('extrato-parcela-massa-atual').value=primeiraTaxaExtra.extra.parcelaAtual||1;
+        document.getElementById('extrato-parcela-massa-total').value=primeiraTaxaExtra.extra.parcelaTotal||1;
+      }else{
+        barraParcela.style.display='none';
+      }
     }catch(err){
       mostrarErroExtrato('Não consegui ler esse arquivo: '+err.message);
     }
@@ -1484,6 +1495,37 @@ function contarTaxaExtraHistorico(unidade,descTaxa){
     });
   });
   return count;
+}
+
+// Ordem igual à do balancete: 1.1 Taxa mensal, 1.2 Taxa extra, 1.3 Atraso, 1.4 Outras,
+// depois despesas: 2.1 Funcionário, 2.2 Recorrentes, 2.4 Sindicais, 2.5 Diversas, 2.6 Obras
+const ORDEM_CATEGORIA_EXTRATO={
+  'taxa-mensal':0, 'taxa-extra':1, 'atraso':2, 'outras':3,
+  'sal-mensal':4,'sal-ferias':4,'sal-13':4,'sal-cob':4,'vale-al':4,'vale-tr':4,'inss':4,'fgts':4,
+  'celpe':5,'compesa':5,'seguro':5,'adm':5,
+  'secovi':6,
+  'agua':7,'limpeza':7,'outros':7,
+  'obras':8,'obras-taxa':8
+};
+function ordenarExtratoRows(rows){
+  return rows.map((r,idx)=>({r,idx})).sort((a,b)=>{
+    const oa=ORDEM_CATEGORIA_EXTRATO[a.r.categoria]??9;
+    const ob=ORDEM_CATEGORIA_EXTRATO[b.r.categoria]??9;
+    return oa!==ob ? oa-ob : a.idx-b.idx; // estável dentro do mesmo grupo
+  }).map(x=>x.r);
+}
+
+function aplicarParcelaEmMassa(){
+  const atual=parseInt(document.getElementById('extrato-parcela-massa-atual').value)||1;
+  const total=parseInt(document.getElementById('extrato-parcela-massa-total').value)||1;
+  extratoRows.forEach(r=>{
+    if(r.categoria==='taxa-extra'){
+      r.extra.parcelaAtual=atual;
+      r.extra.parcelaTotal=total;
+      r.desc=montarDescricaoReceita(r);
+    }
+  });
+  renderExtratoTable();
 }
 
 // --- Sugestão inicial por linha ---
@@ -1557,7 +1599,7 @@ function sugerirDespesa(t,ctx){
   if(/vale transporte|sind das emp de transp/.test(txt)) return {categoria:'vale-tr', unidade:'', extra:{tipoVale:'normal', periodo:periodoSeguinte}};
   if(/caixa economica federal/.test(txt)) return {categoria:'fgts', unidade:'', extra:{periodo:periodoAnterior, referente:'nenhum'}};
   if(/darf/.test(txt)) return {categoria:'inss', unidade:'', extra:{periodo:periodoAnterior, referente:'nenhum'}};
-  if(/sind emp vend|secovi/.test(txt)) return {categoria:'secovi', unidade:'', extra:{}};
+  if(/sind emp vend|secovi/.test(txt)) return {categoria:'secovi', unidade:'', extra:{periodo:periodoAtual}};
   if(/tokio marine|segurad/.test(txt)){ const p=ctx.parcelaSeguro; return {categoria:'seguro', unidade:'', extra:{parcelaAtual:p.parcelaAtual, parcelaTotal:p.parcelaTotal}}; }
   if(/compesa/.test(txt)) return {categoria:'compesa', unidade:'', extra:{periodo:periodoAnterior, consumo:''}};
   if(/celpe|companhia ene/.test(txt)) return {categoria:'celpe', unidade:'', extra:{periodo:periodoAnterior, consumo:''}};
@@ -1604,7 +1646,7 @@ function montarDescricaoDespesa(row){
     case 'celpe': return `CELPE (${ex.periodo||''})${ex.consumo?` - consumo: ${ex.consumo} KWh`:''}`;
     case 'compesa': return `COMPESA (${ex.periodo||''})${ex.consumo?` - consumo: ${ex.consumo} m³`:''}`;
     case 'agua': return 'Água (galão)';
-    case 'secovi': return 'SECOVI/SIECC/PE';
+    case 'secovi': return `SECOVI/SIECC/PE (${ex.periodo||''})`;
     default: return ex.manualDesc!==undefined?ex.manualDesc:(row.desc||'');
   }
 }
@@ -1628,7 +1670,7 @@ function extraPadrao(categoria){
   if(categoria==='inss'||categoria==='fgts') return {periodo:periodoAnterior, referente:'nenhum'};
   if(categoria==='vale-al'||categoria==='vale-tr') return {tipoVale:'normal', periodo:periodoSeguinte};
   if(categoria==='seguro'){ const p=sugerirParcelaSeguro(); return {parcelaAtual:p.parcelaAtual, parcelaTotal:p.parcelaTotal}; }
-  if(categoria==='adm') return {periodo:periodoAtual};
+  if(categoria==='adm'||categoria==='secovi') return {periodo:periodoAtual};
   if(categoria==='celpe'||categoria==='compesa') return {periodo:periodoAnterior, consumo:''};
   if(categoria==='taxa-mensal') return {periodo:periodoAtual, multa:false};
   if(categoria==='taxa-extra'){
@@ -1692,7 +1734,7 @@ function campoDetalhes(row,i){
       <input type="number" min="1" value="${ex.parcelaTotal||10}" style="${S};width:40px" onchange="atualizarExtraRow(${i},'parcelaTotal',parseInt(this.value)||10)">
     </div>`;
   }
-  if(row.categoria==='adm'){
+  if(row.categoria==='adm'||row.categoria==='secovi'){
     return `<input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">`;
   }
   if(row.categoria==='celpe'||row.categoria==='compesa'){
