@@ -28,7 +28,10 @@ function showModal(id){
   if(id==='modal-add-funcionario'&&document.getElementById('func-edit-idx').value==='-1')resetFuncModal();
   if(id==='modal-lote-receita') buildLoteTable();
 }
-function closeModal(id){document.getElementById(id).classList.remove('open')}
+function closeModal(id){
+  document.getElementById(id).classList.remove('open');
+  if(id==='modal-importar-extrato') resetModalImportarExtrato();
+}
 document.querySelectorAll('.modal-overlay').forEach(m=>{
   m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')});
 });
@@ -52,7 +55,12 @@ function getFeriadosMes(y,m){
     const parts=f.data.split('-');
     return parseInt(parts[0])===y&&parseInt(parts[1])===(m+1);
   }).filter(f=>{
-    const d=new Date(f.data);return d.getDay()!==0;
+    // new Date('YYYY-MM-DD') é interpretado como meia-noite UTC — em fusos atrás
+    // de UTC (ex.: Brasil, UTC-3) isso "volta" pro dia anterior e o getDay() sai
+    // errado. Construindo com (ano,mês,dia) o JS usa o fuso local corretamente.
+    const p=f.data.split('-').map(Number);
+    const d=new Date(p[0],p[1]-1,p[2]);
+    return d.getDay()!==0;
   }).length;
 }
 function getWorkDays(y,m){return getDaysInMonth(y,m)-getWeekend(y,m)-getFeriadosMes(y,m)}
