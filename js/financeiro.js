@@ -1324,9 +1324,7 @@ const CATEGORIAS_RECEITA_EXTRATO=[
   {v:'outras',l:'Outras Receitas'}
 ];
 const CATEGORIAS_DESPESA_EXTRATO=[
-  {v:'sal-mensal',l:'Salário Mensal'},
-  {v:'sal-ferias',l:'Férias'},
-  {v:'sal-13',l:'13º Salário'},
+  {v:'sal-mensal',l:'Salário Funcionário (quinzena/férias/13º)'},
   {v:'vale-al',l:'Vale Alimentação'},
   {v:'vale-tr',l:'Vale Transporte'},
   {v:'inss',l:'INSS/PIS'},
@@ -1354,8 +1352,13 @@ function normalizarTextoExtrato(s){
 const STOPWORDS_NOME_EXTRATO=new Set(['de','da','do','das','dos','e','ltda','me','sa','s.a','eireli','administradora','associacao','condominio']);
 function algumaPalavraBate(nomeCadastro,txtNormalizado){
   const palavras=normalizarTextoExtrato(nomeCadastro).split(/[^a-z0-9]+/).filter(p=>p.length>=4 && !STOPWORDS_NOME_EXTRATO.has(p));
-  return palavras.some(p=>txtNormalizado.includes(p));
+  if(!palavras.length) return false;
+  // só a 1ª palavra significativa (geralmente o primeiro nome) — evita falso positivo
+  // com sobrenomes comuns (ex.: "Silva") batendo em pessoas diferentes
+  return txtNormalizado.includes(palavras[0]);
 }
+
+function ehCategoriaSalario(cat){ return cat==='sal-mensal'||cat==='sal-ferias'||cat==='sal-13'; }
 
 function parseDataBRparaISO(dataBR){
   // "27/07/2026" -> "2026-07-27"
@@ -1363,6 +1366,15 @@ function parseDataBRparaISO(dataBR){
   if(!m) return '';
   return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
 }
+
+// { ano, mes(0-based) } deslocado por delta meses
+function mesAnoAdd(ano,mesIdx,delta){
+  let m=mesIdx+delta, a=ano;
+  while(m<0){m+=12;a-=1;}
+  while(m>11){m-=12;a+=1;}
+  return {ano:a,mes:m};
+}
+function fmtPeriodo(ano,mesIdx){ return `${String(mesIdx+1).padStart(2,'0')}/${ano}`; }
 
 function resetModalImportarExtrato(){
   extratoRows=[];
@@ -1400,11 +1412,13 @@ function processarExtratoArquivo(file){
     try{
       const texto=e.target.result.replace(/^\uFEFF/,''); // remove BOM se houver
       const transacoes=parseCSVExtrato(texto);
+      transacoes.sort((a,b)=>parseDataBRparaISO(a.data).localeCompare(parseDataBRparaISO(b.data)));
       if(!transacoes.length){
         mostrarErroExtrato('Não encontrei nenhuma transação nesse arquivo. Confira se é o CSV correto exportado do banco.');
         return;
       }
-      extratoRows=transacoes.map(t=>sugerirLancamento(t));
+      const ctx={contadorSalario:{}, contadorTaxaExtra:{}, parcelaSeguro:sugerirParcelaSeguro()};
+      extratoRows=transacoes.map(t=>sugerirLancamento(t,ctx));
       renderExtratoTable();
       document.getElementById('extrato-step-upload').style.display='none';
       document.getElementById('extrato-step-validacao').style.display='';
@@ -1421,7 +1435,6 @@ function processarExtratoArquivo(file){
 function parseCSVExtrato(texto){
   const linhas=texto.split(/\r?\n/).filter(l=>l.trim().length);
   if(linhas.length<2) return [];
-  // Espera cabeçalho: Data,Transação,Tipo Transação,Identificação,Valor
   const out=[];
   for(let i=1;i<linhas.length;i++){
     const campos=linhas[i].split(',');
@@ -1442,7 +1455,39 @@ function parseCSVExtrato(texto){
   return out;
 }
 
-function sugerirLancamento(t){
+// --- Auxiliares de sugestão (parcelas/contadores) ---
+function sugerirParcelaSeguro(){
+  let melhorMes=-1, atual=0, total=10;
+  const anos=state.balancetes[state.year]||{};
+  Object.keys(anos).forEach(mIdx=>{
+    const idx=Number(mIdx);
+    if(idx>=state.currentMonth) return;
+    const b=anos[mIdx];
+    (b.despesas||[]).forEach(d=>{
+      if(d.categoria==='seguro'){
+        const mm=(d.desc||'').match(/parcela\s*(\d+)\/(\d+)/i);
+        if(mm && idx>melhorMes){ melhorMes=idx; atual=parseInt(mm[1]); total=parseInt(mm[2]); }
+      }
+    });
+  });
+  return {parcelaAtual:melhorMes>=0?atual+1:1, parcelaTotal:total};
+}
+
+function contarTaxaExtraHistorico(unidade,descTaxa){
+  let count=0;
+  const anos=state.balancetes[state.year]||{};
+  Object.keys(anos).forEach(mIdx=>{
+    if(Number(mIdx)>=state.currentMonth) return;
+    const b=anos[mIdx];
+    (b.receitas||[]).forEach(r=>{
+      if(r.categoria==='taxa-extra' && r.unidade===unidade && (r.desc||'').startsWith(descTaxa)) count++;
+    });
+  });
+  return count;
+}
+
+// --- Sugestão inicial por linha ---
+function sugerirLancamento(t,ctx){
   const isReceita=t.tipo.includes('CR')||t.valor>0; // CRÉDITO
   const dataISO=parseDataBRparaISO(t.data);
   const base={
@@ -1452,123 +1497,288 @@ function sugerirLancamento(t){
     valor:Math.abs(t.valor),
     origemTexto:`${t.transacao} — ${t.identificacao}`
   };
-
-  if(isReceita) return Object.assign(base, sugerirReceita(t));
-  return Object.assign(base, sugerirDespesa(t));
+  const extra=isReceita?sugerirReceita(t,ctx):sugerirDespesa(t,ctx);
+  const row=Object.assign(base,extra);
+  row.desc=row.tipo==='receita'?montarDescricaoReceita(row):montarDescricaoDespesa(row);
+  return row;
 }
 
-function sugerirReceita(t){
+function sugerirReceita(t,ctx){
   const m=t.identificacao.match(/Apto\s*(\d+)/i);
   const unidade=m?m[1]:'';
   const condomino=state.condominos.find(c=>c.apto===unidade);
-  const mesLabel=`${MONTHS[state.currentMonth]}/${state.year}`;
+  const periodoAtual=fmtPeriodo(state.year,state.currentMonth);
 
-  if(condomino){
-    // Bate com a taxa mensal cadastrada?
-    if(Math.abs(t.valor-Number(condomino.taxa||0))<0.02){
-      return {categoria:'taxa-mensal', unidade, desc:`Taxa mensal ${mesLabel}`};
-    }
-    // Bate com alguma taxa extra ativa?
-    const taxaExtra=(state.taxasExtras||[]).find(te=>Math.abs(t.valor-Number(te.valorUnit||0))<0.02);
-    if(taxaExtra){
-      return {categoria:'taxa-extra', unidade, desc:taxaExtra.desc};
-    }
-    if(condomino.status==='Inadimplente'){
-      return {categoria:'atraso', unidade, desc:`Recebimento em atraso — Apto ${unidade}`};
-    }
-    return {categoria:'outras', unidade, desc:`Apto ${unidade} — ${t.transacao}`};
+  if(!condomino){
+    return {categoria:'outras', unidade:'', extra:{manualDesc:t.identificacao||t.transacao}};
   }
-  return {categoria:'outras', unidade:'', desc:t.identificacao||t.transacao};
+
+  // Candidatos: taxa mensal da unidade + cada taxa extra ativa — aceita até 50% a mais (multa/juros)
+  const candidatos=[];
+  if(condomino.taxa>0) candidatos.push({tipo:'taxa-mensal', base:Number(condomino.taxa), ref:null});
+  (state.taxasExtras||[]).forEach(te=>candidatos.push({tipo:'taxa-extra', base:Number(te.valorUnit||0), ref:te}));
+
+  let melhor=null, melhorDiff=Infinity;
+  candidatos.forEach(c=>{
+    if(c.base<=0) return;
+    if(t.valor < c.base-0.02) return;
+    if(t.valor > c.base*1.5) return;
+    const diff=t.valor-c.base;
+    if(diff<melhorDiff){ melhorDiff=diff; melhor=c; }
+  });
+
+  if(melhor){
+    const comMulta=melhorDiff>0.02;
+    if(melhor.tipo==='taxa-mensal'){
+      return {categoria:'taxa-mensal', unidade, extra:{periodo:periodoAtual, multa:comMulta}};
+    }
+    const chave=`${unidade}::${melhor.ref.desc}`;
+    if(ctx.contadorTaxaExtra[chave]===undefined) ctx.contadorTaxaExtra[chave]=contarTaxaExtraHistorico(unidade,melhor.ref.desc);
+    ctx.contadorTaxaExtra[chave]++;
+    const parcelaAtual=Math.min(ctx.contadorTaxaExtra[chave], melhor.ref.parcelas||ctx.contadorTaxaExtra[chave]);
+    return {categoria:'taxa-extra', unidade, extra:{descTaxa:melhor.ref.desc, parcelaAtual, parcelaTotal:melhor.ref.parcelas, multa:comMulta, reserva:true}};
+  }
+
+  if(condomino.status==='Inadimplente'){
+    return {categoria:'atraso', unidade, extra:{manualDesc:`Recebimento em atraso — Apto ${unidade}`}};
+  }
+  return {categoria:'outras', unidade, extra:{manualDesc:`Apto ${unidade} — ${t.transacao}`}};
 }
 
-function sugerirDespesa(t){
+function sugerirDespesa(t,ctx){
   const txt=normalizarTextoExtrato(t.transacao+' '+t.identificacao);
+  const periodoAtual=fmtPeriodo(state.year,state.currentMonth);
+  const ant=mesAnoAdd(state.year,state.currentMonth,-1);
+  const periodoAnterior=fmtPeriodo(ant.ano,ant.mes);
+  const prox=mesAnoAdd(state.year,state.currentMonth,1);
+  const periodoSeguinte=fmtPeriodo(prox.ano,prox.mes);
 
-  const regras=[
-    {re:/pluxee/, categoria:'vale-al', desc:'Vale alimentação'},
-    {re:/vale transporte|sind das emp de transp/, categoria:'vale-tr', desc:'Vale transporte'},
-    {re:/darf/, categoria:'inss', desc:'INSS/FGTS (DARF) — confira se é INSS ou FGTS'},
-    {re:/sind emp vend|secovi/, categoria:'secovi', desc:'SECOVI/SIECC/PE'},
-    {re:/tokio marine|segurad/, categoria:'seguro', desc:'Seguro condomínio'},
-    {re:/compesa/, categoria:'compesa', desc:'COMPESA'},
-    {re:/celpe|companhia ene/, categoria:'celpe', desc:'CELPE'},
-    {re:/tarifa|saque/, categoria:'outros', desc:'Tarifa/saque bancário'},
-    {re:/compra no debito/, categoria:'outros', desc:'Compra no débito'},
-  ];
-  for(const r of regras){
-    if(r.re.test(txt)) return {categoria:r.categoria, unidade:'', desc:r.desc};
-  }
+  if(/pluxee/.test(txt)) return {categoria:'vale-al', unidade:'', extra:{tipoVale:'normal', periodo:periodoSeguinte}};
+  if(/vale transporte|sind das emp de transp/.test(txt)) return {categoria:'vale-tr', unidade:'', extra:{tipoVale:'normal', periodo:periodoSeguinte}};
+  if(/caixa economica federal/.test(txt)) return {categoria:'fgts', unidade:'', extra:{periodo:periodoAnterior, referente:'nenhum'}};
+  if(/darf/.test(txt)) return {categoria:'inss', unidade:'', extra:{periodo:periodoAnterior, referente:'nenhum'}};
+  if(/sind emp vend|secovi/.test(txt)) return {categoria:'secovi', unidade:'', extra:{}};
+  if(/tokio marine|segurad/.test(txt)){ const p=ctx.parcelaSeguro; return {categoria:'seguro', unidade:'', extra:{parcelaAtual:p.parcelaAtual, parcelaTotal:p.parcelaTotal}}; }
+  if(/compesa/.test(txt)) return {categoria:'compesa', unidade:'', extra:{periodo:periodoAnterior, consumo:''}};
+  if(/celpe|companhia ene/.test(txt)) return {categoria:'celpe', unidade:'', extra:{periodo:periodoAnterior, consumo:''}};
+  if(/leo agua|deposito de bebidas/.test(txt)) return {categoria:'agua', unidade:'', extra:{}};
+  if(/andrezza/.test(txt)) return {categoria:'adm', unidade:'', extra:{periodo:periodoAtual}};
+  if(/tarifa|saque/.test(txt)) return {categoria:'outros', unidade:'', extra:{manualDesc:'Tarifa/saque bancário'}};
+  if(/compra no debito/.test(txt)) return {categoria:'outros', unidade:'', extra:{manualDesc:'Compra no débito'}};
 
-  // Nome bate com funcionário cadastrado?
   const func=(state.funcionarios||[]).find(f=>f.nome && algumaPalavraBate(f.nome,txt));
   if(func){
-    return {categoria:'sal-mensal', unidade:'', desc:`${func.nome} — confira se é salário, VT/VA ou reembolso de obra`};
+    ctx.contadorSalario[func.nome]=(ctx.contadorSalario[func.nome]||0)+1;
+    const n=ctx.contadorSalario[func.nome];
+    const tipoSal=n===1?'q1':n===2?'q2':'complemento';
+    return {categoria:'sal-mensal', unidade:'', extra:{tipoSal, periodo:periodoAtual, referente:'nenhum'}};
   }
 
-  // Nome bate com fornecedor cadastrado?
   const forn=(state.fornecedores||[]).find(f=>f.nome && algumaPalavraBate(f.nome,txt));
   if(forn){
     const servTxt=normalizarTextoExtrato(forn.servico||'');
-    let cat='outros';
-    if(/administra|funcionari|contabil|folha/.test(servTxt)) cat='adm';
-    else if(/obra|manuten|reparo|reforma/.test(servTxt)) cat='obras';
-    return {categoria:cat, unidade:'', desc:`${forn.nome} — ${forn.servico||''}`};
+    if(/administra|funcionari|contabil|folha/.test(servTxt)) return {categoria:'adm', unidade:'', extra:{periodo:periodoAtual}};
+    if(/obra|manuten|reparo|reforma/.test(servTxt)) return {categoria:'obras', unidade:'', extra:{manualDesc:`${forn.nome} — ${forn.servico||''}`}};
+    return {categoria:'outros', unidade:'', extra:{manualDesc:`${forn.nome} — ${forn.servico||''}`}};
   }
 
-  return {categoria:'outros', unidade:'', desc:`${t.transacao} — ${t.identificacao}`};
+  return {categoria:'outros', unidade:'', extra:{manualDesc:`${t.transacao} — ${t.identificacao}`}};
 }
 
+// --- Monta descrição a partir de categoria + campos extras ---
+function montarDescricaoDespesa(row){
+  const ex=row.extra||{};
+  if(ehCategoriaSalario(row.categoria)){
+    const tipoLabel=ex.tipoSal==='q1'?'1ª quinzena':ex.tipoSal==='q2'?'2ª quinzena':'Complemento por aumento';
+    const nome=ex.referente==='ferias'?'Férias':ex.referente==='13'?'13º Salário':'Salários';
+    return `${nome} - ${tipoLabel} (${ex.periodo||''})`;
+  }
+  const sufixo=ex.referente==='ferias'?' — Férias':ex.referente==='13'?' — 13º Salário':'';
+  switch(row.categoria){
+    case 'inss': return `INSS e PIS (${ex.periodo||''})${sufixo}`;
+    case 'fgts': return `FGTS (${ex.periodo||''})${sufixo}`;
+    case 'vale-al': return `Vale alimentação${ex.tipoVale==='complemento'?' - complemento por aumento':''} (${ex.periodo||''})`;
+    case 'vale-tr': return `Vale transporte${ex.tipoVale==='complemento'?' - complemento por aumento':''} (${ex.periodo||''})`;
+    case 'seguro': return `Seguro condomínio (parcela ${ex.parcelaAtual||'?'}/${ex.parcelaTotal||10})`;
+    case 'adm': return `Taxa administração (${ex.periodo||''})`;
+    case 'celpe': return `CELPE (${ex.periodo||''})${ex.consumo?` - consumo: ${ex.consumo} KWh`:''}`;
+    case 'compesa': return `COMPESA (${ex.periodo||''})${ex.consumo?` - consumo: ${ex.consumo} m³`:''}`;
+    case 'agua': return 'Água (galão)';
+    case 'secovi': return 'SECOVI/SIECC/PE';
+    default: return ex.manualDesc!==undefined?ex.manualDesc:(row.desc||'');
+  }
+}
+
+function montarDescricaoReceita(row){
+  const ex=row.extra||{};
+  if(row.categoria==='taxa-mensal') return `Taxa mensal ${ex.periodo||''}`+(ex.multa?' (paga com multa)':'');
+  if(row.categoria==='taxa-extra') return `${ex.descTaxa||''} - Parcela ${ex.parcelaAtual||'?'}/${ex.parcelaTotal||'?'}`+(ex.multa?' (paga com multa)':'');
+  return ex.manualDesc!==undefined?ex.manualDesc:(row.desc||'');
+}
+
+// --- Extra padrão ao trocar a categoria manualmente ---
+function extraPadrao(categoria){
+  const periodoAtual=fmtPeriodo(state.year,state.currentMonth);
+  const ant=mesAnoAdd(state.year,state.currentMonth,-1);
+  const periodoAnterior=fmtPeriodo(ant.ano,ant.mes);
+  const prox=mesAnoAdd(state.year,state.currentMonth,1);
+  const periodoSeguinte=fmtPeriodo(prox.ano,prox.mes);
+
+  if(ehCategoriaSalario(categoria)) return {tipoSal:'q1', periodo:periodoAtual, referente:'nenhum'};
+  if(categoria==='inss'||categoria==='fgts') return {periodo:periodoAnterior, referente:'nenhum'};
+  if(categoria==='vale-al'||categoria==='vale-tr') return {tipoVale:'normal', periodo:periodoSeguinte};
+  if(categoria==='seguro'){ const p=sugerirParcelaSeguro(); return {parcelaAtual:p.parcelaAtual, parcelaTotal:p.parcelaTotal}; }
+  if(categoria==='adm') return {periodo:periodoAtual};
+  if(categoria==='celpe'||categoria==='compesa') return {periodo:periodoAnterior, consumo:''};
+  if(categoria==='taxa-mensal') return {periodo:periodoAtual, multa:false};
+  if(categoria==='taxa-extra'){
+    const te=(state.taxasExtras||[])[0];
+    return {descTaxa:te?te.desc:'Taxa Extra', parcelaAtual:1, parcelaTotal:te?te.parcelas:1, multa:false, reserva:true};
+  }
+  return {manualDesc:''};
+}
+
+// --- Render da tabela ---
 function optsCategoria(tipo,selecionada){
   const lista=tipo==='receita'?CATEGORIAS_RECEITA_EXTRATO:CATEGORIAS_DESPESA_EXTRATO;
-  return lista.map(c=>`<option value="${c.v}"${c.v===selecionada?' selected':''}>${c.l}</option>`).join('');
+  const sel=ehCategoriaSalario(selecionada)?'sal-mensal':selecionada;
+  return lista.map(c=>`<option value="${c.v}"${c.v===sel?' selected':''}>${c.l}</option>`).join('');
 }
 
 function optsUnidade(selecionada){
   return '<option value="">—</option>'+state.condominos.map(c=>`<option value="${c.apto}"${c.apto===selecionada?' selected':''}>${c.apto}</option>`).join('');
 }
 
+function campoDetalhes(row,i){
+  const ex=row.extra||{};
+  const S='font-size:11px;padding:2px 4px;width:auto';
+  if(ehCategoriaSalario(row.categoria)){
+    return `<div style="display:flex;gap:3px;flex-wrap:wrap">
+      <select style="${S}" onchange="atualizarExtraRow(${i},'tipoSal',this.value)">
+        <option value="q1"${ex.tipoSal==='q1'?' selected':''}>1ª quinz.</option>
+        <option value="q2"${ex.tipoSal==='q2'?' selected':''}>2ª quinz.</option>
+        <option value="complemento"${ex.tipoSal==='complemento'?' selected':''}>Complemento</option>
+      </select>
+      <input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">
+      <select style="${S}" onchange="atualizarExtraRow(${i},'referente',this.value)">
+        <option value="nenhum"${ex.referente==='nenhum'?' selected':''}>—</option>
+        <option value="ferias"${ex.referente==='ferias'?' selected':''}>Férias</option>
+        <option value="13"${ex.referente==='13'?' selected':''}>13º</option>
+      </select>
+    </div>`;
+  }
+  if(row.categoria==='inss'||row.categoria==='fgts'){
+    return `<div style="display:flex;gap:3px;flex-wrap:wrap">
+      <input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">
+      <select style="${S}" onchange="atualizarExtraRow(${i},'referente',this.value)">
+        <option value="nenhum"${ex.referente==='nenhum'?' selected':''}>—</option>
+        <option value="ferias"${ex.referente==='ferias'?' selected':''}>Férias</option>
+        <option value="13"${ex.referente==='13'?' selected':''}>13º</option>
+      </select>
+    </div>`;
+  }
+  if(row.categoria==='vale-al'||row.categoria==='vale-tr'){
+    return `<div style="display:flex;gap:3px">
+      <select style="${S}" onchange="atualizarExtraRow(${i},'tipoVale',this.value)">
+        <option value="normal"${ex.tipoVale==='normal'?' selected':''}>Normal</option>
+        <option value="complemento"${ex.tipoVale==='complemento'?' selected':''}>Complemento</option>
+      </select>
+      <input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">
+    </div>`;
+  }
+  if(row.categoria==='seguro'){
+    return `<div style="display:flex;gap:3px;align-items:center">
+      <input type="number" min="1" value="${ex.parcelaAtual||1}" style="${S};width:40px" onchange="atualizarExtraRow(${i},'parcelaAtual',parseInt(this.value)||1)">/
+      <input type="number" min="1" value="${ex.parcelaTotal||10}" style="${S};width:40px" onchange="atualizarExtraRow(${i},'parcelaTotal',parseInt(this.value)||10)">
+    </div>`;
+  }
+  if(row.categoria==='adm'){
+    return `<input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">`;
+  }
+  if(row.categoria==='celpe'||row.categoria==='compesa'){
+    return `<div style="display:flex;gap:3px">
+      <input type="text" value="${ex.periodo||''}" placeholder="mm/aaaa" style="${S};width:56px" onchange="atualizarExtraRow(${i},'periodo',this.value)">
+      <input type="text" value="${ex.consumo||''}" placeholder="${row.categoria==='celpe'?'KWh':'m³'}" style="${S};width:50px" onchange="atualizarExtraRow(${i},'consumo',this.value)">
+    </div>`;
+  }
+  if(row.categoria==='taxa-mensal'){
+    return `<label style="font-size:11px;display:flex;gap:3px;align-items:center"><input type="checkbox" ${ex.multa?'checked':''} onchange="atualizarExtraRow(${i},'multa',this.checked)">multa</label>`;
+  }
+  if(row.categoria==='taxa-extra'){
+    return `<div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">
+      <input type="number" min="1" value="${ex.parcelaAtual||1}" style="${S};width:32px" onchange="atualizarExtraRow(${i},'parcelaAtual',parseInt(this.value)||1)">/
+      <input type="number" min="1" value="${ex.parcelaTotal||1}" style="${S};width:32px" onchange="atualizarExtraRow(${i},'parcelaTotal',parseInt(this.value)||1)">
+      <label style="font-size:11px;display:flex;gap:2px;align-items:center"><input type="checkbox" ${ex.reserva!==false?'checked':''} onchange="atualizarExtraRow(${i},'reserva',this.checked)">reserva</label>
+      <label style="font-size:11px;display:flex;gap:2px;align-items:center"><input type="checkbox" ${ex.multa?'checked':''} onchange="atualizarExtraRow(${i},'multa',this.checked)">multa</label>
+    </div>`;
+  }
+  return '<span style="color:var(--text3)">—</span>';
+}
+
 function renderExtratoTable(){
   const tbody=document.getElementById('extrato-tbody');
   tbody.innerHTML=extratoRows.map((r,i)=>`
     <tr style="${r.incluir?'':'opacity:.45'}">
-      <td style="text-align:center;padding:4px 8px;border-bottom:1px solid var(--border)">
+      <td style="text-align:center;padding:4px 6px;border-bottom:1px solid var(--border)">
         <input type="checkbox" ${r.incluir?'checked':''} onchange="atualizarExtratoRow(${i},'incluir',this.checked)">
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
-        <input type="date" value="${r.dataISO}" style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'dataISO',this.value)">
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        <input type="date" value="${r.dataISO}" style="font-size:11px;padding:2px" onchange="atualizarExtratoRow(${i},'dataISO',this.value)">
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
-        <select style="font-size:12px;padding:3px" onchange="mudarTipoExtratoRow(${i},this.value)">
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        <select style="font-size:11px;padding:2px" onchange="mudarTipoExtratoRow(${i},this.value)">
           <option value="receita"${r.tipo==='receita'?' selected':''}>Receita</option>
           <option value="despesa"${r.tipo==='despesa'?' selected':''}>Despesa</option>
         </select>
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
-        <select style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'categoria',this.value)">
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        <select style="font-size:11px;padding:2px" onchange="mudarCategoriaExtratoRow(${i},this.value)">
           ${optsCategoria(r.tipo,r.categoria)}
         </select>
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
-        ${r.tipo==='receita'?`<select style="font-size:12px;padding:3px" onchange="atualizarExtratoRow(${i},'unidade',this.value)">${optsUnidade(r.unidade)}</select>`:'<span style="color:var(--text3)">—</span>'}
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        ${r.tipo==='receita'?`<select style="font-size:11px;padding:2px" onchange="atualizarExtratoRow(${i},'unidade',this.value)">${optsUnidade(r.unidade)}</select>`:'<span style="color:var(--text3)">—</span>'}
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">
-        <input type="text" value="${(r.desc||'').replace(/"/g,'&quot;')}" style="font-size:12px;padding:3px;width:100%" onchange="atualizarExtratoRow(${i},'desc',this.value)">
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">${campoDetalhes(r,i)}</td>
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        <input type="text" value="${(r.desc||'').replace(/"/g,'&quot;')}" style="font-size:12px;padding:3px;width:100%;min-width:150px" onchange="atualizarExtratoRow(${i},'desc',this.value)">
       </td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:var(--mono)">
-        <input type="number" step="0.01" value="${r.valor}" style="font-size:12px;padding:3px;width:80px;text-align:right" onchange="atualizarExtratoRow(${i},'valor',parseFloat(this.value)||0)">
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border);text-align:right;font-family:var(--mono)">
+        <input type="number" step="0.01" value="${r.valor}" style="font-size:12px;padding:3px;width:75px;text-align:right" onchange="atualizarExtratoRow(${i},'valor',parseFloat(this.value)||0)">
       </td>
     </tr>`).join('');
 }
 
 function atualizarExtratoRow(i,campo,valor){
   extratoRows[i][campo]=valor;
-  if(campo==='incluir'||campo==='categoria') renderExtratoTable();
+  if(campo==='incluir') renderExtratoTable();
+}
+
+function atualizarExtraRow(i,campo,valor){
+  const row=extratoRows[i];
+  row.extra[campo]=valor;
+  if(campo==='referente' && ehCategoriaSalario(row.categoria)){
+    row.categoria=valor==='ferias'?'sal-ferias':valor==='13'?'sal-13':'sal-mensal';
+  }
+  row.desc=row.tipo==='receita'?montarDescricaoReceita(row):montarDescricaoDespesa(row);
+  renderExtratoTable();
+}
+
+function mudarCategoriaExtratoRow(i,novaCategoria){
+  const row=extratoRows[i];
+  row.categoria=novaCategoria;
+  row.extra=extraPadrao(novaCategoria);
+  if(row.tipo==='despesa') row.unidade='';
+  row.desc=row.tipo==='receita'?montarDescricaoReceita(row):montarDescricaoDespesa(row);
+  renderExtratoTable();
 }
 
 function mudarTipoExtratoRow(i,novoTipo){
-  extratoRows[i].tipo=novoTipo;
-  extratoRows[i].categoria=novoTipo==='receita'?'outras':'outros';
-  if(novoTipo==='despesa') extratoRows[i].unidade='';
+  const row=extratoRows[i];
+  row.tipo=novoTipo;
+  row.categoria=novoTipo==='receita'?'outras':'outros';
+  row.extra={manualDesc:row.desc||''};
+  if(novoTipo==='despesa') row.unidade='';
   renderExtratoTable();
 }
 
@@ -1584,9 +1794,15 @@ function confirmarImportacaoExtrato(){
   extratoRows.forEach(r=>{
     if(!r.incluir) return;
     if(r.tipo==='receita'){
-      bal.receitas.push({categoria:r.categoria, unidade:r.unidade||'', valor:r.valor, data:r.dataISO, desc:r.desc||''});
+      const obj={categoria:r.categoria, unidade:r.unidade||'', valor:r.valor, data:r.dataISO, desc:r.desc||''};
+      if(r.categoria==='taxa-extra') obj.isReserva=(r.extra.reserva!==false);
+      bal.receitas.push(obj);
     }else{
-      bal.despesas.push({categoria:r.categoria, valor:r.valor, data:r.dataISO, desc:r.desc||''});
+      const obj={categoria:r.categoria, valor:r.valor, data:r.dataISO, desc:r.desc||''};
+      if((r.categoria==='inss'||r.categoria==='fgts') && r.extra.referente && r.extra.referente!=='nenhum'){
+        obj.isReservaFunc=true;
+      }
+      bal.despesas.push(obj);
     }
     incluidas++;
   });
@@ -1596,4 +1812,3 @@ function confirmarImportacaoExtrato(){
   renderBalancete();
   alert(`${incluidas} lançamento(s) importado(s) com sucesso!`);
 }
-
