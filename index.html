@@ -583,40 +583,39 @@ textarea{resize:vertical;min-height:80px}
       <div class="grid-3" style="margin-bottom:20px">
         <div class="metric-card blue">
           <div class="metric-label">Receita Prevista Ano</div>
-          <div class="metric-value">R$ 52.800</div>
-          <div class="metric-sub">R$ 4.400/mês × 12</div>
+          <div class="metric-value" id="orc-receita">R$ 0</div>
+          <div class="metric-sub" id="orc-receita-sub">—</div>
         </div>
         <div class="metric-card red">
           <div class="metric-label">Despesa Prevista Ano</div>
-          <div class="metric-value">R$ 62.856</div>
-          <div class="metric-sub">Média mensal: R$ 5.238</div>
+          <div class="metric-value" id="orc-despesa">R$ 0</div>
+          <div class="metric-sub" id="orc-despesa-sub">—</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Déficit Previsto</div>
-          <div class="metric-value" style="color:var(--red)">-R$ 10.056</div>
-          <div class="metric-sub">Necessário ajustar taxa</div>
+          <div class="metric-label">Superávit / Déficit Previsto</div>
+          <div class="metric-value" id="orc-deficit">R$ 0</div>
+          <div class="metric-sub" id="orc-deficit-sub">—</div>
         </div>
       </div>
       <div class="card">
         <div class="card-header">
           <div class="card-title">Previsão vs Realizado por Categoria</div>
           <div style="display:flex;gap:8px">
-            <select style="font-size:12px;padding:5px 10px">
-              <option>Exibir: Todos os meses</option>
-              <option>Exibir: Mês atual</option>
+            <select id="orcamento-filtro" style="font-size:12px;padding:5px 10px" onchange="renderOrcamento()">
+              <option value="ano">Exibir: Ano todo (realizado até o mês atual)</option>
+              <option value="mes">Exibir: Mês atual</option>
             </select>
-            <button class="btn" style="font-size:12px;padding:5px 10px">Exportar PDF</button>
           </div>
         </div>
+        <div id="orcamento-aviso" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
         <table class="balan-table">
           <thead>
             <tr>
               <th style="width:200px">Categoria</th>
-              <th style="text-align:right">Tipo Cálculo</th>
+              <th style="text-align:right">Baseado em</th>
               <th style="text-align:right">Previsto</th>
               <th style="text-align:right">Realizado</th>
               <th style="text-align:right">Diferença</th>
-              <th style="text-align:right">Incluir Aumento</th>
             </tr>
           </thead>
           <tbody id="orcamento-tbody"></tbody>
@@ -654,6 +653,10 @@ textarea{resize:vertical;min-height:80px}
             <div class="form-group">
               <label class="form-label">Margem de segurança (%)</label>
               <input type="number" id="sim-margem" value="5" oninput="calcSimulador()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sobra mínima desejada pro caixa (%)</label>
+              <input type="number" id="sim-sobra" value="30" oninput="calcSimulador()">
             </div>
           </div>
           <div class="card">
