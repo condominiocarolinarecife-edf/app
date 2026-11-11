@@ -682,18 +682,18 @@ textarea{resize:vertical;min-height:80px}
       <div class="grid-3" style="margin-bottom:20px">
         <div class="metric-card blue">
           <div class="metric-label">Saldo Total em Conta</div>
-          <div class="metric-value">R$ 1.577</div>
+          <div class="metric-value" id="res-saldo">R$ 0</div>
           <div class="metric-sub">Conta corrente</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Reserva Funcionário</div>
-          <div class="metric-value" style="color:var(--accent)">R$ 1.408</div>
-          <div class="metric-sub">4 × R$ 337,82</div>
+          <div class="metric-value" style="color:var(--accent)" id="res-func">R$ 0</div>
+          <div class="metric-sub" id="res-func-sub">—</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Reserva Taxa Extra</div>
-          <div class="metric-value" style="color:var(--amber)">R$ 452</div>
-          <div class="metric-sub">Fossa séptica</div>
+          <div class="metric-value" style="color:var(--amber)" id="res-taxa">R$ 0</div>
+          <div class="metric-sub" id="res-taxa-sub">—</div>
         </div>
       </div>
       <div class="card" style="margin-bottom:16px">
@@ -741,7 +741,7 @@ textarea{resize:vertical;min-height:80px}
             </div>
             <div class="form-row">
               <div class="form-group"><label class="form-label">% INSS patronal</label><input type="number" id="enc-inss-pct" value="33.015" step="0.001" oninput="calcEncargos()"></div>
-              <div class="form-group"><label class="form-label">% FGTS</label><input type="number" id="enc-fgts-pct" value="8" oninput="calcEncargos()"></div>
+              <div class="form-group"><label class="form-label">% FGTS</label><input type="number" id="enc-fgts-pct" value="13.513" step="0.001" oninput="calcEncargos()"></div>
             </div>
           </div>
           <div class="card" id="enc-resultado"></div>
