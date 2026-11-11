@@ -940,30 +940,73 @@ function exportBalancete(tipo){
 }
 
 // ==================== ORÇAMENTO ====================
+// Categorias de despesa recorrente exibidas na tabela (mesmo critério do Simulador:
+// exclui obras/pontuais). sal-ferias/sal-13/sal-cob também ficam de fora daqui —
+// são provisão de reserva (já tratada na tela Reserva Financeira), não despesa
+// recorrente mensal, então misturá-las aqui inflaria a "despesa prevista" com um
+// valor que depende de quando no ano a folga foi paga.
+const CATS_DESPESA_ORCAMENTO = ['sal-mensal','vale-al','vale-tr','inss','fgts','celpe','compesa','seguro','adm','secovi'];
+
 function renderOrcamento(){
-  const cats=[
-    {id:'CD1',nome:'Recebimentos Mensais',previsto:4400,tipo:'FIXO',real:4400,aumento:false},
-    {id:'CD5',nome:'Salário Mensal',previsto:1419.48,tipo:'FIXO',real:1419.48,aumento:true},
-    {id:'CD9',nome:'Vale Alimentação',previsto:425,tipo:'FIXO',real:425,aumento:true},
-    {id:'CD10',nome:'Vale Transporte',previsto:245.48,tipo:'MÁXIMO',real:207,aumento:false},
-    {id:'CD11',nome:'INSS + PIS',previsto:644.83,tipo:'FIXO',real:534.16,aumento:true},
-    {id:'CD14',nome:'CELPE (Energia)',previsto:169.32,tipo:'MÁXIMO',real:156.16,aumento:false},
-    {id:'CD15',nome:'COMPESA',previsto:741.24,tipo:'MÁXIMO',real:741.24,aumento:true},
-    {id:'CD16',nome:'Seguro Condomínio',previsto:220.99,tipo:'MÉDIA',real:220.99,aumento:false},
-    {id:'CD17',nome:'Taxa Administração',previsto:190,tipo:'FIXO',real:190,aumento:false},
-    {id:'CD20',nome:'SECOVI/SIECC/PE',previsto:55,tipo:'MÁXIMO',real:50,aumento:false}
+  const filtro = document.getElementById('orcamento-filtro')?.value || 'ano';
+  const mesAtual = state.currentMonth;
+  const mesesRealizado = filtro==='mes' ? [mesAtual] : Array.from({length:mesAtual+1},(_,i)=>i);
+
+  const { mediaPorCat, n } = getMediaDespesasPorCategoria(state.year);
+  const realizado = getRealizadoPorCategoria(state.year, mesesRealizado);
+  const nMesesRealizado = mesesRealizado.length;
+
+  const receitaPrevMensal = getReceitaPrevistaMensal();
+  const receitaPrevPeriodo = receitaPrevMensal * nMesesRealizado;
+  const receitaRealPeriodo = realizado.receitas['taxa-mensal'] || 0;
+
+  let despesaPrevMensalTotal = 0;
+  CATS_DESPESA_ORCAMENTO.forEach(cat => despesaPrevMensalTotal += (mediaPorCat[cat]||0));
+  const despesaPrevPeriodo = despesaPrevMensalTotal * nMesesRealizado;
+  let despesaRealPeriodo = 0;
+  CATS_DESPESA_ORCAMENTO.forEach(cat => despesaRealPeriodo += (realizado.despesas[cat]||0));
+
+  const aviso = document.getElementById('orcamento-aviso');
+  if(aviso){
+    aviso.innerHTML = n===0
+      ? '<span style="color:var(--amber)">⚠ Nenhum mês fechado ainda — "Previsto" fica zerado até fechar ao menos um balancete.</span>'
+      : `"Previsto" = média real das despesas recorrentes dos ${n} mês${n>1?'es':''} já fechado${n>1?'s':''} (mesma base do Simulador de Taxa) · Receita prevista = soma das taxas mensais cadastradas (unidades não isentas) · Obras/pontuais e férias/13º (reserva) não entram aqui.`;
+  }
+
+  const setTxtOrc=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  setTxtOrc('orc-receita', brl(receitaPrevPeriodo));
+  setTxtOrc('orc-receita-sub', `Realizado: ${brl(receitaRealPeriodo)}`);
+  setTxtOrc('orc-despesa', brl(despesaPrevPeriodo));
+  setTxtOrc('orc-despesa-sub', `Realizado: ${brl(despesaRealPeriodo)}`);
+  const deficitPrev = receitaPrevPeriodo - despesaPrevPeriodo;
+  setTxtOrc('orc-deficit', (deficitPrev>=0?'':'-')+brl(Math.abs(deficitPrev)));
+  const deficitEl = document.getElementById('orc-deficit');
+  if(deficitEl) deficitEl.style.color = deficitPrev>=0 ? 'var(--green)' : 'var(--red)';
+  setTxtOrc('orc-deficit-sub', deficitPrev>=0 ? 'Superávit — taxa atual cobre as despesas' : 'Necessário ajustar taxa');
+
+  const linhas = [
+    { nome:'Taxa Mensal (recebimentos)', cat:'taxa-mensal', previsto:receitaPrevPeriodo, real:receitaRealPeriodo, base:'Cadastro de unidades' }
   ];
+  CATS_DESPESA_ORCAMENTO.forEach(cat=>{
+    const mediaCat = mediaPorCat[cat]||0;
+    linhas.push({
+      nome: CATS_LABELS[cat]||cat, cat,
+      previsto: mediaCat*nMesesRealizado,
+      real: realizado.despesas[cat]||0,
+      base: n>0 ? `Média ${n} mês${n>1?'es':''}` : 'Sem meses fechados'
+    });
+  });
+
   const tbody=document.getElementById('orcamento-tbody');
-  tbody.innerHTML=cats.map(c=>{
+  tbody.innerHTML=linhas.map(c=>{
     const diff=c.real-c.previsto;
-    const cls=diff>0?'red':diff<0?'green':'';
+    const cor = c.cat==='taxa-mensal' ? (diff>=0?'green':'red') : (diff>0?'red':diff<0?'green':'text3');
     return`<tr>
       <td>${c.nome}</td>
-      <td style="text-align:right"><span class="badge blue">${c.tipo}</span></td>
+      <td style="text-align:right;font-size:11px;color:var(--text3)">${c.base}</td>
       <td class="tnum" style="text-align:right">${brl(c.previsto)}</td>
       <td class="tnum" style="text-align:right">${brl(c.real)}</td>
-      <td class="tnum ${cls}" style="text-align:right;color:var(--${diff>0?'red':diff<0?'green':'text3'})">${diff!==0?(diff>0?'+':'')+brl(diff):'—'}</td>
-      <td style="text-align:center"><span class="badge ${c.aumento?'green':'amber'}">${c.aumento?'Sim':'Não'}</span></td>
+      <td class="tnum" style="text-align:right;color:var(--${cor})">${diff!==0?(diff>0?'+':'')+brl(diff):'—'}</td>
     </tr>`;
   }).join('');
 }
@@ -980,38 +1023,68 @@ const CATS_LABELS = {
   'agua':'Água','limpeza':'Limpeza','outros':'Outros','obras':'Obras','obras-taxa':'Obras (taxa extra)'
 };
 
-function importarDespesasSimulador(){
-  // Pega os meses fechados do ano atual e calcula média das despesas recorrentes
-  const bal = state.balancetes[state.year] || {};
+// Fonte única de verdade para "despesa recorrente média", usada tanto pelo
+// Simulador quanto pelo Orçamento/Previsão — assim as duas telas nunca mais
+// podem divergir sobre a mesma conta.
+// mesesFechados: só os meses marcados como fechados entram na média (dado
+// consolidado/confiável); a média de cada categoria é total da categoria ÷
+// nº de meses fechados (ou seja, meses sem aquele lançamento contam como 0,
+// o que é correto para itens sazonais como férias/13º serem "provisionados"
+// mensalmente de forma equivalente).
+function getMediaDespesasPorCategoria(ano){
+  const bal = state.balancetes[ano] || {};
   const mesesFechados = [];
-
   for(let i = 0; i <= 11; i++){
     if(bal[i]?.fechado) mesesFechados.push(i);
   }
+  const totalPorCat = {};
+  mesesFechados.forEach(m => {
+    (bal[m].despesas || []).forEach(d => {
+      if(CATS_EXCLUIR_SIMULADOR.includes(d.categoria)) return; // ignora obras/pontuais
+      totalPorCat[d.categoria] = (totalPorCat[d.categoria] || 0) + Number(d.valor || 0);
+    });
+  });
+  const n = mesesFechados.length;
+  const mediaPorCat = {};
+  if(n > 0){
+    Object.entries(totalPorCat).forEach(([cat, total]) => { mediaPorCat[cat] = total / n; });
+  }
+  return { mediaPorCat, n, mesesFechados };
+}
 
-  if(mesesFechados.length === 0){
+// Soma real do que já foi lançado (fechado ou não) por categoria, no período pedido.
+function getRealizadoPorCategoria(ano, meses){
+  const bal = state.balancetes[ano] || {};
+  const totais = { receitas:{}, despesas:{} };
+  meses.forEach(m => {
+    const b = bal[m];
+    if(!b) return;
+    (b.receitas||[]).forEach(r=>{ totais.receitas[r.categoria] = (totais.receitas[r.categoria]||0) + Number(r.valor||0); });
+    (b.despesas||[]).forEach(d=>{ totais.despesas[d.categoria] = (totais.despesas[d.categoria]||0) + Number(d.valor||0); });
+  });
+  return totais;
+}
+
+// Receita mensal previsível = soma das taxas mensais cadastradas das unidades
+// não isentas. Não entram taxa extra/atraso/outras — não são recorrentes previsíveis.
+function getReceitaPrevistaMensal(){
+  return (state.condominos||[])
+    .filter(c => c.status !== 'Isento')
+    .reduce((s,c) => s + Number(c.taxa||0), 0);
+}
+
+function importarDespesasSimulador(){
+  const { mediaPorCat, n } = getMediaDespesasPorCategoria(state.year);
+
+  if(n === 0){
     const detalhe = document.getElementById('sim-despesas-detalhe');
     if(detalhe) detalhe.innerHTML = '<span style="color:var(--amber)">Nenhum mês fechado — preencha o valor manualmente.</span>';
     calcSimulador();
     return;
   }
 
-  // Agrupa despesas recorrentes por categoria, excluindo obras
-  const totalPorCat = {};
-  mesesFechados.forEach(m => {
-    (bal[m].despesas || []).forEach(d => {
-      if(CATS_EXCLUIR_SIMULADOR.includes(d.categoria)) return; // ignora obras
-      totalPorCat[d.categoria] = (totalPorCat[d.categoria] || 0) + Number(d.valor || 0);
-    });
-  });
-
-  const n = mesesFechados.length;
-  const mediaPorCat = {};
   let totalMedio = 0;
-  Object.entries(totalPorCat).forEach(([cat, total]) => {
-    mediaPorCat[cat] = total / n;
-    totalMedio += total / n;
-  });
+  Object.values(mediaPorCat).forEach(v => totalMedio += v);
 
   // Preenche o campo
   const el = document.getElementById('sim-despesas');
@@ -1059,14 +1132,20 @@ function calcSimulador(){
   const taxaAtual = parseFloat(elTaxa.value) || 450;
   const despesas  = parseFloat(elDesp.value) || 5238;
   const margem    = parseFloat(document.getElementById('sim-margem')?.value||5)/100;
+  const sobraPct  = parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
 
   const taxaMinima     = despesas / unidades;
   const taxaComMargem  = taxaMinima * (1 + margem);
+  // Taxa Segura: a receita total (taxaSegura×unidades) precisa deixar pelo menos
+  // sobraPct de folga em relação às despesas, ou seja despesas <= receita×(1-sobraPct)
+  // => taxaSegura = despesas / (unidades × (1-sobraPct)) = taxaMinima / (1-sobraPct)
+  const taxaSegura     = sobraPct < 1 ? taxaMinima / (1 - sobraPct) : taxaMinima;
   const recAtual       = unidades * taxaAtual;
   const deficit        = recAtual - despesas;
 
   const cenarios = [
     {nome:'Mínimo (cobrir despesas)',       valor:taxaMinima,    pct:((taxaMinima/taxaAtual-1)*100)},
+    {nome:`Taxa Segura (sobra mín. ${Math.round(sobraPct*100)}% p/ caixa)`, valor:taxaSegura, pct:((taxaSegura/taxaAtual-1)*100)},
     {nome:`Recomendado (+ margem ${Math.round(margem*100)}%)`, valor:taxaComMargem, pct:((taxaComMargem/taxaAtual-1)*100)},
     {nome:'Conservador (+5%)',              valor:taxaAtual*1.05,pct:5},
     {nome:'Moderado (+10%)',                valor:taxaAtual*1.10,pct:10}
@@ -1097,25 +1176,44 @@ function calcSimulador(){
         <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);padding-top:6px"><span style="font-size:13px">Superávit / Déficit</span><span style="font-family:var(--mono);color:${deficit>=0?'var(--green)':'var(--red)'}">${brl(deficit)}</span></div>
       </div>
     </div>
-    <div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa mínima necessária</div>
-      <div style="font-size:28px;font-weight:600;font-family:var(--mono);color:var(--accent)">${brl(taxaMinima)}</div>
-      <div style="font-size:12px;color:var(--text3)">Para cobrir exatamente as despesas</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:140px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa mínima necessária</div>
+        <div style="font-size:24px;font-weight:600;font-family:var(--mono);color:var(--accent)">${brl(taxaMinima)}</div>
+        <div style="font-size:12px;color:var(--text3)">Para cobrir exatamente as despesas (sobra zero)</div>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa Segura (sobra ${Math.round(sobraPct*100)}%)</div>
+        <div style="font-size:24px;font-weight:600;font-family:var(--mono);color:var(--amber)">${brl(taxaSegura)}</div>
+        <div style="font-size:12px;color:var(--text3)">Sobra de ${brl(taxaSegura*unidades-despesas)}/mês pro caixa</div>
+      </div>
     </div>`;
 }
 
 function exportSimulador(){
+  // Antes usava "+5%" fixo no PDF mesmo quando a margem/sobra configuradas na tela
+  // eram outras — agora usa exatamente os mesmos parâmetros e fórmulas da tela.
   const unidades=parseInt(document.getElementById('sim-unidades').value||11);
   const despesas=parseFloat(document.getElementById('sim-despesas').value||5238);
   const taxa=parseFloat(document.getElementById('sim-taxa-atual').value||400);
+  const margem=parseFloat(document.getElementById('sim-margem')?.value||5)/100;
+  const sobraPct=parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
+
+  const taxaMinima=despesas/unidades;
+  const taxaSegura=sobraPct<1 ? taxaMinima/(1-sobraPct) : taxaMinima;
+  const taxaComMargem=taxaMinima*(1+margem);
+  const linha=(nome,val)=>`<tr><td>${nome}</td><td>${brl(val)}</td><td>${brl(val*unidades)}</td><td>${((val/taxa-1)*100).toFixed(1)}%</td></tr>`;
+
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Simulação de Taxa</title><style>body{font-family:Arial;max-width:700px;margin:0 auto;padding:20px;font-size:11pt}h1{font-size:13pt;text-align:center}table{width:100%;border-collapse:collapse}td,th{padding:6px 10px;border:1pt solid #ccc}@media print{button{display:none}}</style></head><body>
   <button onclick="window.print()">Imprimir / PDF</button>
   <h1>${state.gestao.nome}</h1><h2 style="text-align:center;font-size:11pt">SIMULAÇÃO DE TAXA DE CONDOMÍNIO — ${state.year}</h2>
-  <table><tr><th>Cenário</th><th>Taxa/Unid.</th><th>Receita Total</th><th>Aumento</th></tr>
+  <p style="font-size:9pt;color:#555">Despesa recorrente mensal considerada: ${brl(despesas)} · Unidades pagantes: ${unidades}</p>
+  <table><tr><th>Cenário</th><th>Taxa/Unid.</th><th>Receita Total</th><th>Variação</th></tr>
   <tr><td>Taxa atual</td><td>${brl(taxa)}</td><td>${brl(taxa*unidades)}</td><td>—</td></tr>
-  <tr><td>Mínimo (cobrir despesas)</td><td>${brl(despesas/unidades)}</td><td>${brl(despesas)}</td><td>${((despesas/unidades/taxa-1)*100).toFixed(1)}%</td></tr>
-  <tr><td>Recomendado (+5%)</td><td>${brl(despesas/unidades*1.05)}</td><td>${brl(despesas/unidades*1.05*unidades)}</td><td>${((despesas/unidades*1.05/taxa-1)*100).toFixed(1)}%</td></tr>
+  ${linha('Mínimo (cobrir despesas, sobra zero)',taxaMinima)}
+  ${linha(`Taxa Segura (sobra mín. ${Math.round(sobraPct*100)}% p/ caixa)`,taxaSegura)}
+  ${linha(`Recomendado (+ margem ${Math.round(margem*100)}%)`,taxaComMargem)}
   </table></body></html>`);
 }
 
