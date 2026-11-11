@@ -53,8 +53,12 @@ let state = {
     assembleiaIsencaoData:'2018-01-30'
   },
   encargos:{
+    // fgtsPct corrigido: guia real paga à Caixa é de R$221,49/mês sobre R$1.639,05
+    // de bruto = 13,513%, não os 8% "padrão" usados antes (isso vinha subestimando
+    // a reserva mensal de férias/13º). INSS+PIS (33,015%+1%) já batiam com o real
+    // DARF de R$557,51, então ficam como estavam.
     salario:1639.05, va:455, vt:207, cobSocial:50,
-    inssPct:33.015, fgtsPct:8
+    inssPct:33.015, fgtsPct:13.513
   },
   vtConfig:{valor:4.50, qtd:2},
   feriados:[
@@ -689,9 +693,3 @@ function atualizarInfoBackup() {
     el.style.color = 'var(--amber)';
   }
 }
-
-
-
-
-
-
