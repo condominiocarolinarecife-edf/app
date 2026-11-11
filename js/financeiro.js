@@ -173,7 +173,7 @@ function calcReservaFuncAcum(m){
 
 function calcReservaMensal(){
   const sal     = state.encargos.salario || 1639.05;
-  const fgtsPct = (state.encargos.fgtsPct || 8) / 100;
+  const fgtsPct = (state.encargos.fgtsPct || 13.513) / 100;
   const salLiq  = sal * (1 - 0.08);
   const terco   = sal / 3;
   const recLiqFerias = salLiq + terco - terco * 0.08;
@@ -1122,6 +1122,18 @@ function exportSimulador(){
 // ==================== RESERVA ====================
 function renderReserva(){
   const reservaMes = calcReservaMensal();
+  const m = state.currentMonth;
+
+  // Cards do topo — antes eram valores fixos de mockup, agora refletem o estado real
+  const saldoAtual = calcSaldoAnterior(m) + calcTotalReceitas(m) - calcTotalDespesas(m);
+  const reservaFuncAtual = calcReservaFuncAcum(m);
+  const reservaTaxaAtual = calcReservaTaxaAcum(m);
+  const setTxtRes=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  setTxtRes('res-saldo', brl(saldoAtual));
+  setTxtRes('res-func', brl(reservaFuncAtual));
+  setTxtRes('res-func-sub', `${brl(reservaMes)}/mês acumulado`);
+  setTxtRes('res-taxa', brl(reservaTaxaAtual));
+  setTxtRes('res-taxa-sub', `Acumulado em ${state.year}`);
 
   // Reserva funcionário — cumulativa mês a mês, sem desconto em Janeiro
   const tbody = document.getElementById('reserva-func-tbody');
@@ -1181,7 +1193,7 @@ function calcEncargos(){
   const va     = parseFloat(document.getElementById('enc-va')?.value     || 455);
   const cob    = parseFloat(document.getElementById('enc-cob')?.value    || 50);
   const inssPct= parseFloat(document.getElementById('enc-inss-pct')?.value || 33.015) / 100;
-  const fgtsPct= parseFloat(document.getElementById('enc-fgts-pct')?.value || 8)      / 100;
+  const fgtsPct= parseFloat(document.getElementById('enc-fgts-pct')?.value || 13.513)  / 100;
 
   // ── Custo mensal ──
   const inssEmp    = sal * 0.08;
@@ -1243,6 +1255,7 @@ function calcEncargos(){
   </div>`;
 
   state.encargos = {salario:sal, va, cobSocial:cob, inssPct:inssPct*100, fgtsPct:fgtsPct*100};
+  save(); // antes não salvava — editar os campos aqui não persistia (voltava ao valor antigo ao recarregar)
   renderEncReserva(reservaMes, custoFerias, custo13);
 }
 
