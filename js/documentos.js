@@ -224,7 +224,12 @@ function getAllTemplates(){
     template:(f,g)=>{
       let txt=t.textoBase||'';
       txt=txt.replace(/\{nome_cond\}/g,g.nome||'').replace(/\{cnpj\}/g,g.cnpj||'').replace(/\{endereco\}/g,g.endereco||'').replace(/\{sindico\}/g,g.sindico||'');
-      (t.campos||[]).forEach(c=>{txt=txt.replace(new RegExp('\\{'+c.id+'\\}','g'),f[c.id]||'');});
+      // Campo tipo "data" formatado como dd/mm/aaaa em vez do valor cru do <input type=date> (aaaa-mm-dd)
+      (t.campos||[]).forEach(c=>{
+        let val=f[c.id]||'';
+        if(c.tipo==='date' && val) val=formatDateBRShort(val);
+        txt=txt.replace(new RegExp('\\{'+c.id+'\\}','g'),val);
+      });
       return txt;
     }
   }));
@@ -274,7 +279,10 @@ function renderDocumentos(){
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
         ${g.templates.map(t=>`
           <div class="doc-template" onclick="openDocTemplate('${t.id}')" style="position:relative">
-            ${t._custom?`<button onclick="event.stopPropagation();excluirModelo('${t.id}')" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px" title="Excluir">✕</button>`:''}
+            ${t._custom?`<span style="position:absolute;top:8px;right:8px;display:flex;gap:6px">
+              <button onclick="event.stopPropagation();editarModelo('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:12px" title="Editar">✎</button>
+              <button onclick="event.stopPropagation();excluirModelo('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px" title="Excluir">✕</button>
+            </span>`:''}
             <div class="doc-icon"><span style="font-size:20px">${t.icon||'📄'}</span></div>
             <div><div style="font-size:13px;font-weight:500;margin-bottom:2px">${t.nome}</div><div style="font-size:12px;color:var(--text3)">${t.desc||''}</div></div>
           </div>`).join('')}
@@ -643,7 +651,53 @@ function generateDocPDF(){
 }
 
 // ==================== GERADOR DE MODELOS ====================
+// Mapa campo.id -> checkbox do modal, usado tanto pra montar os campos ao salvar
+// quanto pra marcar os checkboxes certos ao reabrir um modelo pra editar.
+const GEN_CAMPO_CHECKBOX = {
+  'apto':{checkId:'gen-f-apto', campo:{id:'apto',label:'Apartamento',tipo:'select-apto'}},
+  'data':{checkId:'gen-f-data', campo:{id:'data',label:'Data',tipo:'date'}},
+  'nome-pessoa':{checkId:'gen-f-nome-pessoa', campo:{id:'nome-pessoa',label:'Nome da pessoa',tipo:'text'}},
+  'cpf':{checkId:'gen-f-cpf', campo:{id:'cpf',label:'CPF',tipo:'text'}},
+  'valor':{checkId:'gen-f-valor', campo:{id:'valor',label:'Valor (R$)',tipo:'number'}},
+  'valor-ext':{checkId:'gen-f-valor-ext', campo:{id:'valor-ext',label:'Valor por extenso',tipo:'text'}},
+  'mes':{checkId:'gen-f-mes', campo:{id:'mes',label:'Mês de referência',tipo:'select-mes'}},
+  'assunto':{checkId:'gen-f-assunto', campo:{id:'assunto',label:'Assunto / Infração',tipo:'text'}},
+  'descricao':{checkId:'gen-f-descricao', campo:{id:'descricao',label:'Descrição / Observação',tipo:'textarea'}},
+  'parcela':{checkId:'gen-f-parcela', campo:{id:'parcela',label:'Parcela (ex: 1/2)',tipo:'text'}},
+  'local':{checkId:'gen-f-local', campo:{id:'local',label:'Local',tipo:'text'}}
+};
+
+function resetFormGerador(){
+  ['gen-nome','gen-desc','gen-texto'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
+  document.getElementById('gen-icone').value='📄';
+  document.getElementById('gen-categoria').value='outros';
+  Object.values(GEN_CAMPO_CHECKBOX).forEach(({checkId})=>{const el=document.getElementById(checkId);if(el)el.checked=(checkId==='gen-f-data');});
+  const fotosEl=document.getElementById('gen-f-fotos'); if(fotosEl) fotosEl.checked=false;
+  document.getElementById('gen-edit-id').value='';
+  document.getElementById('gen-modal-title').textContent='✨ Criar Novo Modelo de Documento';
+}
+
 function openGerador(){
+  resetFormGerador();
+  showModal('modal-gerador');
+}
+
+function editarModelo(id){
+  const t=(state.customTemplates||[]).find(x=>x.id===id);
+  if(!t)return;
+  resetFormGerador();
+  document.getElementById('gen-edit-id').value=id;
+  document.getElementById('gen-modal-title').textContent='✎ Editar Modelo de Documento';
+  document.getElementById('gen-nome').value=t.nome||'';
+  document.getElementById('gen-categoria').value=t.categoria||'outros';
+  document.getElementById('gen-icone').value=t.icon||'📄';
+  document.getElementById('gen-desc').value=t.desc||'';
+  document.getElementById('gen-texto').value=t.textoBase||'';
+  const idsPresentes=new Set((t.campos||[]).map(c=>c.id));
+  Object.entries(GEN_CAMPO_CHECKBOX).forEach(([campoId,{checkId}])=>{
+    const el=document.getElementById(checkId); if(el) el.checked=idsPresentes.has(campoId);
+  });
+  const fotosEl=document.getElementById('gen-f-fotos'); if(fotosEl) fotosEl.checked=!!t.fotos;
   showModal('modal-gerador');
 }
 
@@ -654,32 +708,34 @@ function salvarNovoModelo(){
   const icone=document.getElementById('gen-icone').value.trim()||'📄';
   const desc=document.getElementById('gen-desc').value.trim();
   const texto=document.getElementById('gen-texto').value;
+  // Esse texto É o documento inteiro — se ficar em branco, a prévia e o PDF saem
+  // vazios (foi exatamente isso que aconteceu: um modelo salvo sem texto nenhum).
+  if(!texto.trim()){
+    alert('O "Texto padrão do documento" não pode ficar em branco — é ele que forma o documento inteiro (incluindo a saudação). Escreva o texto antes de salvar.');
+    document.getElementById('gen-texto').focus();
+    return;
+  }
 
   // Build campos from checked boxes
   const campos=[];
-  const addCampo=(checkId,campo)=>{if(document.getElementById(checkId).checked)campos.push(campo);};
-  addCampo('gen-f-apto',{id:'apto',label:'Apartamento',tipo:'select-apto'});
-  addCampo('gen-f-data',{id:'data',label:'Data',tipo:'date'});
-  addCampo('gen-f-nome-pessoa',{id:'nome-pessoa',label:'Nome da pessoa',tipo:'text'});
-  addCampo('gen-f-cpf',{id:'cpf',label:'CPF',tipo:'text'});
-  addCampo('gen-f-valor',{id:'valor',label:'Valor (R$)',tipo:'number'});
-  addCampo('gen-f-valor-ext',{id:'valor-ext',label:'Valor por extenso',tipo:'text'});
-  addCampo('gen-f-mes',{id:'mes',label:'Mês de referência',tipo:'select-mes'});
-  addCampo('gen-f-assunto',{id:'assunto',label:'Assunto / Infração',tipo:'text'});
-  addCampo('gen-f-descricao',{id:'descricao',label:'Descrição / Observação',tipo:'textarea'});
-  addCampo('gen-f-parcela',{id:'parcela',label:'Parcela (ex: 1/2)',tipo:'text'});
-  addCampo('gen-f-local',{id:'local',label:'Local',tipo:'text'});
+  Object.values(GEN_CAMPO_CHECKBOX).forEach(({checkId,campo})=>{
+    if(document.getElementById(checkId).checked) campos.push(campo);
+  });
   const temFotos=document.getElementById('gen-f-fotos').checked;
 
-  const id='custom-'+Date.now();
   if(!state.customTemplates)state.customTemplates=[];
-  state.customTemplates.push({id,icon:icone,nome,desc,categoria:cat,campos,textoBase:texto,fotos:temFotos});
+  const editId=document.getElementById('gen-edit-id').value;
+  if(editId){
+    const idx=state.customTemplates.findIndex(t=>t.id===editId);
+    if(idx>=0) state.customTemplates[idx]={id:editId,icon:icone,nome,desc,categoria:cat,campos,textoBase:texto,fotos:temFotos};
+  } else {
+    const id='custom-'+Date.now();
+    state.customTemplates.push({id,icon:icone,nome,desc,categoria:cat,campos,textoBase:texto,fotos:temFotos});
+  }
   save();
   closeModal('modal-gerador');
   renderDocumentos();
-  // Reset form
-  ['gen-nome','gen-desc','gen-texto'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
-  document.getElementById('gen-icone').value='📄';
+  resetFormGerador();
 }
 
 function excluirModelo(id){
@@ -688,4 +744,3 @@ function excluirModelo(id){
   save();
   renderDocumentos();
 }
-
