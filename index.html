@@ -1016,9 +1016,10 @@ textarea{resize:vertical;min-height:80px}
     <div class="modal-overlay" id="modal-gerador">
       <div class="modal" style="width:min(700px,96vw)">
         <div class="modal-header">
-          <div class="modal-title">✨ Criar Novo Modelo de Documento</div>
+          <div class="modal-title" id="gen-modal-title">✨ Criar Novo Modelo de Documento</div>
           <button class="modal-close" onclick="closeModal('modal-gerador')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
+        <input type="hidden" id="gen-edit-id" value="">
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
@@ -1067,6 +1068,7 @@ textarea{resize:vertical;min-height:80px}
           <div class="sep"></div>
           <div class="form-group">
             <label class="form-label">Texto padrão do documento <span style="color:var(--text3);font-weight:400">(use {campo} para inserir variáveis, ex: {apto}, {data}, {nome_cond}, {cnpj}, {endereco}, {sindico})</span></label>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠ Não existe um campo separado de "saudação" — escreva a saudação (ex: "Prezados moradores,") direto aqui dentro, como no exemplo abaixo. Esse texto é o documento inteiro; o que não estiver escrito aqui não aparece na prévia nem no PDF.</div>
             <textarea id="gen-texto" rows="10" placeholder="Digite o texto padrão do documento aqui...&#10;&#10;Exemplo:&#10;{nome_cond}&#10;CNPJ {cnpj} — {endereco}&#10;&#10;COMUNICADO&#10;&#10;Prezado(a) condômino(a) do Apto. {apto},&#10;&#10;..."></textarea>
           </div>
         </div>
