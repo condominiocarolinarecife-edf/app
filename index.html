@@ -1359,16 +1359,22 @@ textarea{resize:vertical;min-height:80px}
         <div style="font-size:11px;color:var(--text3);margin-top:4px">Gera automaticamente "Taxa Mensal mm/aaaa" para cada unidade. Unidades isentas recebem a descrição de isenção cadastrada em Gestão (com a data da assembleia).</div>
       </div>
       <div id="lote-extra-wrap" style="display:none">
-        <div class="form-row" style="margin-bottom:12px">
+        <div class="form-row" style="margin-bottom:4px">
           <div class="form-group">
-            <label class="form-label">Motivo</label>
-            <input type="text" id="lote-motivo" placeholder="Ex: Fachada" onchange="reaplicarDescLote()">
+            <label class="form-label">Taxa Extra</label>
+            <select id="lote-te-select" onchange="onLoteTeSelectChange()"></select>
           </div>
           <div class="form-group">
             <label class="form-label">Parcela</label>
             <input type="text" id="lote-parcela" placeholder="Ex: 4/10 (em branco = parcela única)" onchange="reaplicarDescLote()">
           </div>
         </div>
+        <div class="form-group" id="lote-motivo-outro-wrap" style="display:none;margin-bottom:12px">
+          <label class="form-label">Motivo (taxa extra nova, ainda não cadastrada)</label>
+          <input type="text" id="lote-motivo-outro" placeholder="Ex: Fachada" onchange="reaplicarDescLote()">
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Cadastre em "Reserva Financeira → Nova Taxa Extra" pra ela entrar automaticamente no acumulado da Reserva depois.</div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:12px" id="lote-te-aviso"></div>
       </div>
       <div id="lote-taxa-extra-flag" style="display:none;margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
