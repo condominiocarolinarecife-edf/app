@@ -667,6 +667,20 @@ const GEN_CAMPO_CHECKBOX = {
   'local':{checkId:'gen-f-local', campo:{id:'local',label:'Local',tipo:'text'}}
 };
 
+// Sempre que um checkbox de campo é marcado/desmarcado no gerador, mostra a
+// lista exata de placeholders válidos pra colar no texto — antes a pessoa
+// tinha que adivinhar o nome técnico (ex: digitar o rótulo "Assunto / Infração"
+// em vez de "{assunto}" não funcionava, e não ficava claro em lugar nenhum).
+function atualizarCamposDisponiveis(){
+  const div=document.getElementById('gen-campos-disponiveis');
+  if(!div)return;
+  const fixos=['{nome_cond}','{cnpj}','{endereco}','{sindico}'];
+  const doCampo=Object.entries(GEN_CAMPO_CHECKBOX)
+    .filter(([campoId,{checkId}])=>document.getElementById(checkId)?.checked)
+    .map(([campoId])=>'{'+campoId+'}');
+  div.textContent=[...fixos,...doCampo].join('  ');
+}
+
 function resetFormGerador(){
   ['gen-nome','gen-desc','gen-texto'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
   document.getElementById('gen-icone').value='📄';
@@ -675,6 +689,7 @@ function resetFormGerador(){
   const fotosEl=document.getElementById('gen-f-fotos'); if(fotosEl) fotosEl.checked=false;
   document.getElementById('gen-edit-id').value='';
   document.getElementById('gen-modal-title').textContent='✨ Criar Novo Modelo de Documento';
+  atualizarCamposDisponiveis();
 }
 
 function openGerador(){
@@ -698,6 +713,7 @@ function editarModelo(id){
     const el=document.getElementById(checkId); if(el) el.checked=idsPresentes.has(campoId);
   });
   const fotosEl=document.getElementById('gen-f-fotos'); if(fotosEl) fotosEl.checked=!!t.fotos;
+  atualizarCamposDisponiveis();
   showModal('modal-gerador');
 }
 
