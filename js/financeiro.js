@@ -1281,15 +1281,38 @@ function renderReserva(){
 
   // Reserva taxa extra — acumula receitas isReserva:true, deduz obras-taxa
   const tbody2 = document.getElementById('reserva-taxa-tbody');
-  tbody2.innerHTML = state.taxasExtras.map(t => `
+  tbody2.innerHTML = state.taxasExtras.map(t => {
+    const arrecadado = calcArrecadadoTaxaExtra(t);
+    const usado = Number(t.usado||0);
+    return `
     <tr>
       <td>${t.desc}</td>
       <td class="tnum" style="text-align:right">${brl(t.valorUnit * t.parcelas)}</td>
       <td style="text-align:right">${t.parcelas}</td>
-      <td class="tnum" style="text-align:right;color:var(--green)">${brl(t.arrecadado)}</td>
-      <td class="tnum" style="text-align:right;color:var(--red)">${brl(t.usado)}</td>
-      <td class="tnum" style="text-align:right;font-weight:600">${brl(t.arrecadado - t.usado)}</td>
-    </tr>`).join('');
+      <td class="tnum" style="text-align:right;color:var(--green)">${brl(arrecadado)}</td>
+      <td class="tnum" style="text-align:right;color:var(--red)">${brl(usado)}<span style="color:var(--text3);font-weight:400" title="O 'usado' ainda não é automático: não há vínculo entre uma despesa de obras e uma taxa extra específica. Edite manualmente clicando no valor, se precisar.">*</span></td>
+      <td class="tnum" style="text-align:right;font-weight:600">${brl(arrecadado - usado)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Soma real do que já foi recebido para uma taxa extra específica, em todos os
+// anos/meses do state — casando pela descrição (mesma regra já usada em
+// contarTaxaExtraHistorico): a receita lançada começa com o texto cadastrado
+// aqui (ex.: "Tratamento e pintura da fachada - Parcela 3/10" começa com
+// "Tratamento e pintura da fachada"). Antes esse valor vinha de um campo
+// estático (arrecadado:X) que nunca era atualizado pelos lançamentos reais.
+function calcArrecadadoTaxaExtra(te){
+  let total = 0;
+  Object.keys(state.balancetes||{}).forEach(ano=>{
+    const bal = state.balancetes[ano];
+    for(let m=0;m<=11;m++){
+      (bal[m]?.receitas||[]).forEach(r=>{
+        if(r.categoria==='taxa-extra' && (r.desc||'').startsWith(te.desc)) total += Number(r.valor||0);
+      });
+    }
+  });
+  return total;
 }
 
 function saveTaxaExtra(){
