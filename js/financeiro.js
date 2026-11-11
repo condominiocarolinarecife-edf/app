@@ -343,12 +343,33 @@ function loteDescPadrao(c, cat){
     return periodo ? `Taxa Mensal ${periodo}` : 'Taxa Mensal';
   }
   // taxa-extra
-  const motivo=(document.getElementById('lote-motivo')?.value||'').trim();
   const parcela=(document.getElementById('lote-parcela')?.value||'').trim();
+  const teSel=(document.getElementById('lote-te-select')?.value||'');
+  // Crítico: a descrição PRECISA começar com o texto exato cadastrado em
+  // state.taxasExtras[].desc — é assim que "Arrecadado" na tela Reserva
+  // Financeira casa os lançamentos com a taxa extra certa. Antes esse campo
+  // era um "Motivo" livre (ex.: "Taxa Extra Fachada Parcela 3"), que nunca
+  // batia com o nome cadastrado ("Tratamento e pintura da fachada") — por
+  // isso o arrecadado nunca incluía os lançamentos feitos por aqui.
+  if(teSel && teSel!=='outro' && state.taxasExtras[teSel]){
+    const te=state.taxasExtras[teSel];
+    return te.desc + (parcela ? ` - Parcela ${parcela}` : ' - Parcela Única');
+  }
+  const motivo=(document.getElementById('lote-motivo-outro')?.value||'').trim();
   let desc='Taxa Extra';
   if(motivo) desc+=' '+motivo;
   desc+= parcela ? ` Parcela ${parcela}` : ' Parcela Única';
   return desc;
+}
+function onLoteTeSelectChange(){
+  const teSel=document.getElementById('lote-te-select')?.value||'';
+  const outroWrap=document.getElementById('lote-motivo-outro-wrap');
+  if(outroWrap) outroWrap.style.display = teSel==='outro' ? 'block' : 'none';
+  const aviso=document.getElementById('lote-te-aviso');
+  if(aviso) aviso.innerHTML = teSel==='outro'
+    ? '<span style="color:var(--amber)">⚠ Essa taxa ainda não está cadastrada — o valor lançado não vai entrar no "Arrecadado" da Reserva Financeira até você cadastrá-la lá.</span>'
+    : '';
+  reaplicarDescLote();
 }
 // Reaplica a descrição padrão a todas as unidades (chamado quando período/motivo/parcela mudam)
 function reaplicarDescLote(){
@@ -364,6 +385,15 @@ function buildLoteTable(){
   const isTaxaMensal=cat==='taxa-mensal';
   document.getElementById('lote-taxa-extra-flag').style.display=isTaxaExtra?'block':'none';
   document.getElementById('lote-extra-wrap').style.display=isTaxaExtra?'block':'none';
+  if(isTaxaExtra){
+    const sel=document.getElementById('lote-te-select');
+    if(sel && !sel.dataset.filled){
+      sel.innerHTML = '<option value="">Selecione...</option>'
+        + (state.taxasExtras||[]).map((te,i)=>`<option value="${i}">${te.desc}</option>`).join('')
+        + '<option value="outro">Outra (digitar motivo)</option>';
+      sel.dataset.filled='1';
+    }
+  }
   const periodoWrap=document.getElementById('lote-periodo-wrap');
   periodoWrap.style.display=isTaxaMensal?'block':'none';
   if(isTaxaMensal){
