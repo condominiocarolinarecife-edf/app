@@ -1130,25 +1130,39 @@ function calcSimulador(){
 
   const unidades = parseInt(elUnid.value) || 11;
   const taxaAtual = parseFloat(elTaxa.value) || 450;
-  const despesas  = parseFloat(elDesp.value) || 5238;
+  const despesasBase = parseFloat(elDesp.value) || 5238;
+  const aumentoDespPct = parseFloat(document.getElementById('sim-aumento-desp')?.value||10)/100;
   const margem    = parseFloat(document.getElementById('sim-margem')?.value||5)/100;
   const sobraPct  = parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
 
-  const taxaMinima     = despesas / unidades;
+  const anoAtual = state.year, anoSeguinte = state.year+1;
+  const setTxtSim=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  setTxtSim('sim-titulo', `Simulador de Taxa de Condomínio — ${anoSeguinte}`);
+  setTxtSim('sim-subtitulo', `Projeta a taxa ideal pra ${anoSeguinte} com base nas despesas reais de ${anoAtual} + aumento esperado`);
+  setTxtSim('sim-taxa-atual-label', `Taxa atual (R$) — vigente em ${anoAtual}`);
+  setTxtSim('sim-despesas-label', `Despesas recorrentes mensais (base, ${anoAtual})`);
+
+  // Despesa projetada pro ano seguinte = base atual × (1 + aumento mínimo esperado).
+  // Sem histórico de anos anteriores pra estimar a inflação real das contas, 10% é
+  // usado como piso — ela pode ajustar se tiver uma estimativa melhor.
+  const despesasProjetadas = despesasBase * (1 + aumentoDespPct);
+
+  const taxaMinima     = despesasProjetadas / unidades;
   const taxaComMargem  = taxaMinima * (1 + margem);
   // Taxa Segura: a receita total (taxaSegura×unidades) precisa deixar pelo menos
   // sobraPct de folga em relação às despesas, ou seja despesas <= receita×(1-sobraPct)
   // => taxaSegura = despesas / (unidades × (1-sobraPct)) = taxaMinima / (1-sobraPct)
   const taxaSegura     = sobraPct < 1 ? taxaMinima / (1 - sobraPct) : taxaMinima;
   const recAtual       = unidades * taxaAtual;
-  const deficit        = recAtual - despesas;
+  // Déficit projetado: o que aconteceria em ${anoSeguinte} se a taxa não mudasse
+  const deficit        = recAtual - despesasProjetadas;
 
   const cenarios = [
-    {nome:'Mínimo (cobrir despesas)',       valor:taxaMinima,    pct:((taxaMinima/taxaAtual-1)*100)},
+    {nome:`Mínimo p/ ${anoSeguinte} (cobrir despesas projetadas)`, valor:taxaMinima,    pct:((taxaMinima/taxaAtual-1)*100)},
     {nome:`Taxa Segura (sobra mín. ${Math.round(sobraPct*100)}% p/ caixa)`, valor:taxaSegura, pct:((taxaSegura/taxaAtual-1)*100)},
     {nome:`Recomendado (+ margem ${Math.round(margem*100)}%)`, valor:taxaComMargem, pct:((taxaComMargem/taxaAtual-1)*100)},
-    {nome:'Conservador (+5%)',              valor:taxaAtual*1.05,pct:5},
-    {nome:'Moderado (+10%)',                valor:taxaAtual*1.10,pct:10}
+    {nome:'Conservador (+5% sobre a taxa atual)',   valor:taxaAtual*1.05,pct:5},
+    {nome:'Moderado (+10% sobre a taxa atual)',     valor:taxaAtual*1.10,pct:10}
   ];
 
   const cenDiv = document.getElementById('sim-cenarios');
@@ -1169,37 +1183,41 @@ function calcSimulador(){
   if(!resDiv) return;
   resDiv.innerHTML = `
     <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Situação atual</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Projeção para ${anoSeguinte} (se a taxa não mudar)</div>
       <div style="padding:12px;background:var(--surface2);border-radius:8px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Receita atual/mês</span><span style="font-family:var(--mono)">${brl(recAtual)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa prevista/mês</span><span style="font-family:var(--mono);color:var(--red)">${brl(despesas)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);padding-top:6px"><span style="font-size:13px">Superávit / Déficit</span><span style="font-family:var(--mono);color:${deficit>=0?'var(--green)':'var(--red)'}">${brl(deficit)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Receita atual/mês (taxa de ${anoAtual})</span><span style="font-family:var(--mono)">${brl(recAtual)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa base ${anoAtual}/mês</span><span style="font-family:var(--mono)">${brl(despesasBase)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa projetada ${anoSeguinte}/mês (+${Math.round(aumentoDespPct*100)}%)</span><span style="font-family:var(--mono);color:var(--red)">${brl(despesasProjetadas)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);padding-top:6px"><span style="font-size:13px">Superávit / Déficit projetado</span><span style="font-family:var(--mono);color:${deficit>=0?'var(--green)':'var(--red)'}">${brl(deficit)}</span></div>
       </div>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div style="flex:1;min-width:140px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa mínima necessária</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa mínima p/ ${anoSeguinte}</div>
         <div style="font-size:24px;font-weight:600;font-family:var(--mono);color:var(--accent)">${brl(taxaMinima)}</div>
-        <div style="font-size:12px;color:var(--text3)">Para cobrir exatamente as despesas (sobra zero)</div>
+        <div style="font-size:12px;color:var(--text3)">Cobre exatamente a despesa projetada (sobra zero)</div>
       </div>
       <div style="flex:1;min-width:140px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa Segura (sobra ${Math.round(sobraPct*100)}%)</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Taxa Segura p/ ${anoSeguinte} (sobra ${Math.round(sobraPct*100)}%)</div>
         <div style="font-size:24px;font-weight:600;font-family:var(--mono);color:var(--amber)">${brl(taxaSegura)}</div>
-        <div style="font-size:12px;color:var(--text3)">Sobra de ${brl(taxaSegura*unidades-despesas)}/mês pro caixa</div>
+        <div style="font-size:12px;color:var(--text3)">Sobra de ${brl(taxaSegura*unidades-despesasProjetadas)}/mês pro caixa</div>
       </div>
     </div>`;
 }
 
 function exportSimulador(){
   // Antes usava "+5%" fixo no PDF mesmo quando a margem/sobra configuradas na tela
-  // eram outras — agora usa exatamente os mesmos parâmetros e fórmulas da tela.
+  // eram outras, e não projetava pro ano seguinte — agora espelha exatamente a tela.
   const unidades=parseInt(document.getElementById('sim-unidades').value||11);
-  const despesas=parseFloat(document.getElementById('sim-despesas').value||5238);
+  const despesasBase=parseFloat(document.getElementById('sim-despesas').value||5238);
   const taxa=parseFloat(document.getElementById('sim-taxa-atual').value||400);
+  const aumentoDespPct=parseFloat(document.getElementById('sim-aumento-desp')?.value||10)/100;
   const margem=parseFloat(document.getElementById('sim-margem')?.value||5)/100;
   const sobraPct=parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
+  const anoAtual=state.year, anoSeguinte=state.year+1;
 
-  const taxaMinima=despesas/unidades;
+  const despesasProjetadas=despesasBase*(1+aumentoDespPct);
+  const taxaMinima=despesasProjetadas/unidades;
   const taxaSegura=sobraPct<1 ? taxaMinima/(1-sobraPct) : taxaMinima;
   const taxaComMargem=taxaMinima*(1+margem);
   const linha=(nome,val)=>`<tr><td>${nome}</td><td>${brl(val)}</td><td>${brl(val*unidades)}</td><td>${((val/taxa-1)*100).toFixed(1)}%</td></tr>`;
@@ -1207,11 +1225,11 @@ function exportSimulador(){
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Simulação de Taxa</title><style>body{font-family:Arial;max-width:700px;margin:0 auto;padding:20px;font-size:11pt}h1{font-size:13pt;text-align:center}table{width:100%;border-collapse:collapse}td,th{padding:6px 10px;border:1pt solid #ccc}@media print{button{display:none}}</style></head><body>
   <button onclick="window.print()">Imprimir / PDF</button>
-  <h1>${state.gestao.nome}</h1><h2 style="text-align:center;font-size:11pt">SIMULAÇÃO DE TAXA DE CONDOMÍNIO — ${state.year}</h2>
-  <p style="font-size:9pt;color:#555">Despesa recorrente mensal considerada: ${brl(despesas)} · Unidades pagantes: ${unidades}</p>
+  <h1>${state.gestao.nome}</h1><h2 style="text-align:center;font-size:11pt">SIMULAÇÃO DE TAXA DE CONDOMÍNIO PARA ${anoSeguinte}</h2>
+  <p style="font-size:9pt;color:#555">Despesa recorrente mensal base (${anoAtual}): ${brl(despesasBase)} · Aumento mínimo esperado: ${Math.round(aumentoDespPct*100)}% · Despesa projetada ${anoSeguinte}: ${brl(despesasProjetadas)} · Unidades pagantes: ${unidades}</p>
   <table><tr><th>Cenário</th><th>Taxa/Unid.</th><th>Receita Total</th><th>Variação</th></tr>
-  <tr><td>Taxa atual</td><td>${brl(taxa)}</td><td>${brl(taxa*unidades)}</td><td>—</td></tr>
-  ${linha('Mínimo (cobrir despesas, sobra zero)',taxaMinima)}
+  <tr><td>Taxa atual (${anoAtual})</td><td>${brl(taxa)}</td><td>${brl(taxa*unidades)}</td><td>—</td></tr>
+  ${linha(`Mínimo p/ ${anoSeguinte} (cobrir despesa projetada, sobra zero)`,taxaMinima)}
   ${linha(`Taxa Segura (sobra mín. ${Math.round(sobraPct*100)}% p/ caixa)`,taxaSegura)}
   ${linha(`Recomendado (+ margem ${Math.round(margem*100)}%)`,taxaComMargem)}
   </table></body></html>`);
