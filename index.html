@@ -1051,24 +1051,28 @@ textarea{resize:vertical;min-height:80px}
           <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Escolha quais campos estarão disponíveis para preenchimento ao usar o modelo:</div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-apto"> Apartamento (selector)</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-data" checked> Data do documento</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-nome-pessoa"> Nome da pessoa</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-cpf"> CPF</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-valor"> Valor (R$)</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-valor-ext"> Valor por extenso</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-mes"> Mês de referência</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-assunto"> Assunto / Infração</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-descricao"> Descrição / Observação</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-parcela"> Parcela (ex: 1/2)</label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-local"> Local</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-apto" onchange="atualizarCamposDisponiveis()"> Apartamento (selector)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-data" checked onchange="atualizarCamposDisponiveis()"> Data do documento</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-nome-pessoa" onchange="atualizarCamposDisponiveis()"> Nome da pessoa</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-cpf" onchange="atualizarCamposDisponiveis()"> CPF</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-valor" onchange="atualizarCamposDisponiveis()"> Valor (R$)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-valor-ext" onchange="atualizarCamposDisponiveis()"> Valor por extenso</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-mes" onchange="atualizarCamposDisponiveis()"> Mês de referência</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-assunto" onchange="atualizarCamposDisponiveis()"> Assunto / Infração</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-descricao" onchange="atualizarCamposDisponiveis()"> Descrição / Observação</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-parcela" onchange="atualizarCamposDisponiveis()"> Parcela (ex: 1/2)</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-local" onchange="atualizarCamposDisponiveis()"> Local</label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gen-f-fotos"> Permitir anexar fotos</label>
+          </div>
+          <div style="font-size:12px;background:var(--accent-light);border:1px solid #c5d9f5;border-radius:8px;padding:10px 12px;margin-bottom:14px">
+            <strong>Placeholders disponíveis pra colar no texto abaixo:</strong>
+            <div id="gen-campos-disponiveis" style="font-family:var(--mono);margin-top:4px;line-height:1.8"></div>
           </div>
 
           <div class="sep"></div>
           <div class="form-group">
-            <label class="form-label">Texto padrão do documento <span style="color:var(--text3);font-weight:400">(use {campo} para inserir variáveis, ex: {apto}, {data}, {nome_cond}, {cnpj}, {endereco}, {sindico})</span></label>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠ Não existe um campo separado de "saudação" — escreva a saudação (ex: "Prezados moradores,") direto aqui dentro, como no exemplo abaixo. Esse texto é o documento inteiro; o que não estiver escrito aqui não aparece na prévia nem no PDF.</div>
+            <label class="form-label">Texto padrão do documento</label>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠ Não existe um campo separado de "saudação" — escreva a saudação (ex: "Prezados moradores,") direto aqui dentro, como no exemplo abaixo. Esse texto é o documento inteiro; o que não estiver escrito aqui não aparece na prévia nem no PDF. Use exatamente os placeholders mostrados acima (entre chaves, minúsculos) — o rótulo do campo (ex: "Assunto / Infração") não funciona, só o nome técnico (ex: {assunto}).</div>
             <textarea id="gen-texto" rows="10" placeholder="Digite o texto padrão do documento aqui...&#10;&#10;Exemplo:&#10;{nome_cond}&#10;CNPJ {cnpj} — {endereco}&#10;&#10;COMUNICADO&#10;&#10;Prezado(a) condômino(a) do Apto. {apto},&#10;&#10;..."></textarea>
           </div>
         </div>
