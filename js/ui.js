@@ -26,7 +26,11 @@ function showModal(id){
   document.getElementById(id).classList.add('open');
   if(id==='modal-config'){const el=document.getElementById('conf-nome');if(el)el.value=state.gestao.nome||'';}
   if(id==='modal-add-funcionario'&&document.getElementById('func-edit-idx').value==='-1')resetFuncModal();
-  if(id==='modal-lote-receita') buildLoteTable();
+  if(id==='modal-lote-receita'){
+    const sel=document.getElementById('lote-te-select');
+    if(sel) sel.dataset.filled=''; // sempre reconstrói — pode ter taxa extra nova desde a última vez
+    buildLoteTable();
+  }
 }
 function closeModal(id){
   document.getElementById(id).classList.remove('open');
@@ -104,4 +108,3 @@ function renderDashboard(){
   chart.innerHTML=data.map((v,i)=>`<div style="flex:1;display:flex;gap:2px;align-items:flex-end"><div class="mini-bar receita" style="height:${Math.max(4,(v/maxV)*56)}px;flex:1"></div><div class="mini-bar despesa" style="height:${Math.max(4,(desp[i]/maxV)*56)}px;flex:1"></div></div>`).join('');
   renderAlertasDashboard();
 }
-
