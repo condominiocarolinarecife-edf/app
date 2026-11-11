@@ -625,8 +625,8 @@ textarea{resize:vertical;min-height:80px}
 
     <!-- ==================== SIMULADOR ==================== -->
     <div id="panel-simulador" class="panel">
-      <div class="section-title">Simulador de Taxa de Condomínio</div>
-      <div class="section-sub">Calcule o valor ideal para cobrir as despesas previstas</div>
+      <div class="section-title" id="sim-titulo">Simulador de Taxa de Condomínio</div>
+      <div class="section-sub" id="sim-subtitulo">Projeta a taxa ideal para o ano seguinte, com base nas despesas do ano vigente + aumento esperado</div>
       <div class="grid-2" style="gap:20px">
         <div>
           <div class="card" style="margin-bottom:20px">
@@ -636,12 +636,12 @@ textarea{resize:vertical;min-height:80px}
               <input type="number" id="sim-unidades" value="11" oninput="calcSimulador()">
             </div>
             <div class="form-group">
-              <label class="form-label">Taxa atual (R$)</label>
+              <label class="form-label" id="sim-taxa-atual-label">Taxa atual (R$)</label>
               <input type="number" id="sim-taxa-atual" value="400" oninput="calcSimulador()">
             </div>
             <div class="form-group">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label class="form-label" style="margin:0">Despesas recorrentes mensais previstas (R$)</label>
+                <label class="form-label" style="margin:0" id="sim-despesas-label">Despesas recorrentes mensais (base, ano vigente)</label>
                 <button class="btn" onclick="importarDespesasSimulador()" style="padding:4px 10px;font-size:11px;white-space:nowrap">
                   <svg fill="none" stroke="currentColor" stroke-width="1.8" width="11" height="11" viewBox="0 0 24 24"><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
                   Importar do balancete
@@ -651,7 +651,12 @@ textarea{resize:vertical;min-height:80px}
               <div id="sim-despesas-detalhe" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6"></div>
             </div>
             <div class="form-group">
-              <label class="form-label">Margem de segurança (%)</label>
+              <label class="form-label" id="sim-aumento-desp-label">Aumento mínimo esperado nas despesas (%) — ano seguinte</label>
+              <input type="number" id="sim-aumento-desp" value="10" oninput="calcSimulador()">
+              <div style="font-size:11px;color:var(--text3);margin-top:4px">Sem histórico de anos anteriores pra projetar inflação real, usamos 10% como piso de segurança — ajuste se tiver uma estimativa melhor (reajuste salarial, INPC, etc).</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Margem de segurança adicional (%)</label>
               <input type="number" id="sim-margem" value="5" oninput="calcSimulador()">
             </div>
             <div class="form-group">
