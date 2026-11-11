@@ -1332,13 +1332,40 @@ function renderReserva(){
 // aqui (ex.: "Tratamento e pintura da fachada - Parcela 3/10" começa com
 // "Tratamento e pintura da fachada"). Antes esse valor vinha de um campo
 // estático (arrecadado:X) que nunca era atualizado pelos lançamentos reais.
+// Palavras genéricas demais pra servir de "assinatura" de uma taxa extra
+// (aparecem em qualquer taxa extra, não ajudam a diferenciar uma da outra)
+const STOPWORDS_TAXA_EXTRA = new Set(['taxa','extra','parcela','parc','unica','unico','unidade','condominio','para','com','sobre','das','dos']);
+function palavrasSignificativasTaxaExtra(desc){
+  return normalizarTextoExtrato(desc).split(/[^a-z0-9]+/).filter(p=>p.length>=5 && !STOPWORDS_TAXA_EXTRA.has(p));
+}
+// Compara a descrição de um lançamento com o nome cadastrado de uma taxa extra.
+// Motivo de existir: a mesma taxa extra acaba com descrições diferentes dependendo
+// de como foi lançada ao longo do tempo (lote manual, CSV, digitação livre antiga) —
+// ex.: "Tratamento e pintura da fachada" (cadastro) vs "Taxa extra - tratamento e
+// pintura fachada parc. 1/10" vs "Taxa Extra Fachada Parcela 3/10" (lançamentos
+// reais da Juliana). Confiar só no prefixo exato deixava a maioria de fora.
+// Por isso: além do prefixo exato, aceita bater por qualquer palavra significativa
+// do nome cadastrado (ex.: "fachada") DESDE QUE essa palavra não apareça no nome
+// de nenhuma outra taxa extra cadastrada — assim não há ambiguidade entre itens.
+function receitaCasaTaxaExtra(r, te, todasTaxas){
+  const desc = r.desc||'';
+  if(desc.startsWith(te.desc)) return true;
+  const descNorm = normalizarTextoExtrato(desc);
+  const palavrasTe = palavrasSignificativasTaxaExtra(te.desc);
+  return palavrasTe.some(p=>{
+    const ambigua = todasTaxas.some(outra => outra!==te && palavrasSignificativasTaxaExtra(outra.desc).includes(p));
+    return !ambigua && descNorm.includes(p);
+  });
+}
+
 function calcArrecadadoTaxaExtra(te){
   let total = 0;
+  const todasTaxas = state.taxasExtras||[];
   Object.keys(state.balancetes||{}).forEach(ano=>{
     const bal = state.balancetes[ano];
     for(let m=0;m<=11;m++){
       (bal[m]?.receitas||[]).forEach(r=>{
-        if(r.categoria==='taxa-extra' && (r.desc||'').startsWith(te.desc)) total += Number(r.valor||0);
+        if(r.categoria==='taxa-extra' && receitaCasaTaxaExtra(r, te, todasTaxas)) total += Number(r.valor||0);
       });
     }
   });
