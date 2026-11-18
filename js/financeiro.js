@@ -1506,21 +1506,26 @@ function renderVT(){
   const qtd=parseInt(document.getElementById('vt-qtd')?.value||2);
   const tbody=document.getElementById('vt-tbody');
   if(!tbody)return;
-  tbody.innerHTML=MONTHS.map((mes,i)=>{
-    const total=getDaysInMonth(state.year,i);
-    const wknd=getWeekend(state.year,i);
-    const fer=getFeriadosMes(state.year,i);
+  const linhaVT=(ano,mesIdx,labelExtra)=>{
+    const total=getDaysInMonth(ano,mesIdx);
+    const wknd=getWeekend(ano,mesIdx);
+    const fer=getFeriadosMes(ano,mesIdx);
     const uteis=total-wknd-fer;
     const vtVal=uteis*qtd*valor;
-    return`<tr>
-      <td>${mes}</td>
+    return`<tr${labelExtra?' style="background:var(--accent-light)"':''}>
+      <td>${MONTHS[mesIdx]}${labelExtra?'/'+ano:''}</td>
       <td class="tnum" style="text-align:right">${total-wknd}</td>
       <td class="tnum" style="text-align:right;color:var(--red)">${fer}</td>
       <td class="tnum" style="text-align:right;font-weight:600">${uteis}</td>
       <td class="tnum" style="text-align:right;color:var(--accent2)">${brl(vtVal)}</td>
-      <td><span class="badge blue">Previsto</span></td>
+      <td><span class="badge blue"${labelExtra?` title="Pago em dezembro/${ano-1}, adiantado"`:''}>${labelExtra||'Previsto'}</span></td>
     </tr>`;
-  }).join('');
+  };
+  // 12 meses do exercício vigente + previsão de Janeiro do ano seguinte, já que
+  // o VT desse mês é sempre pago (adiantado) em dezembro do ano vigente.
+  const linhasAno=MONTHS.map((mes,i)=>linhaVT(state.year,i,null)).join('');
+  const linhaProxJan=linhaVT(state.year+1,0,'Próx. ano');
+  tbody.innerHTML=linhasAno+linhaProxJan;
 }
 
 function calcVT(){renderVT();}
