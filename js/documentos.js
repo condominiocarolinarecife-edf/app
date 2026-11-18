@@ -299,6 +299,8 @@ function openDocTemplate(id){
   if(duasViasChk) duasViasChk.checked=false;
   document.getElementById('doc-editor-title').textContent=t.nome;
   const form=document.getElementById('doc-form-fields');
+  const btnAnoReset=document.getElementById('doc-gerar-ano-btn');
+  if(btnAnoReset) btnAnoReset.style.display='none';
 
   // Special form: Previsão de Pagamentos Férias
   if(t._prevFerias){
@@ -330,6 +332,10 @@ function openDocTemplate(id){
   // Show/hide photos block
   document.getElementById('doc-fotos-block').style.display=t.fotos?'block':'none';
   document.getElementById('doc-fotos-list').innerHTML='';
+
+  // Botão "Gerar todos do ano" só aparece pros recibos mensais recorrentes (VA e VT)
+  const btnAno=document.getElementById('doc-gerar-ano-btn');
+  if(btnAno) btnAno.style.display=(t.id==='recibo-vale-alimentacao'||t.id==='recibo-vale-transporte')?'inline-flex':'none';
 
   document.getElementById('doc-editor').style.display='block';
   document.getElementById('doc-editor').scrollIntoView({behavior:'smooth'});
@@ -645,6 +651,48 @@ function generateDocPDF(){
   save();
   const hist=document.getElementById('doc-historico');
   hist.innerHTML=state.docHistorico.map(d=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div><div style="font-size:13px;font-weight:500">${d.tipo}</div><div style="font-size:12px;color:var(--text3)">${d.data}</div></div>
+    </div>`).join('');
+}
+
+// Gera, numa única janela de impressão/PDF, os 12 recibos do ano (um por mês),
+// reaproveitando os dados já preenchidos no formulário (funcionário, cartão etc.)
+// e recalculando por mês só o que muda (período, dias úteis, feriados).
+function gerarTodosDoAno(){
+  if(!activeTemplate)return;
+  if(activeTemplate.id!=='recibo-vale-alimentacao' && activeTemplate.id!=='recibo-vale-transporte')return;
+
+  const baseFields={};
+  document.querySelectorAll('#doc-form-fields [data-field]').forEach(el=>{baseFields[el.dataset.field]=el.value;});
+  const ano=state.year;
+
+  const pages=MONTHS.map((mes,i)=>{
+    const f={...baseFields};
+    if(activeTemplate.id==='recibo-vale-alimentacao'){
+      const diasMes=getDaysInMonth(ano,i);
+      f['periodo-ini']=`01/${String(i+1).padStart(2,'0')}/${ano}`;
+      f['periodo-fim']=`${diasMes}/${String(i+1).padStart(2,'0')}/${ano}`;
+    } else {
+      f['periodo']=`${mes}/${ano}`;
+      f['dias-uteis']=String(getWorkDays(ano,i));
+      const fers=state.feriados.filter(fe=>{
+        const p=fe.data.split('-').map(Number);
+        return p[0]===ano && p[1]===(i+1);
+      }).map(fe=>fe.desc);
+      f['feriados']=fers.join('\n');
+    }
+    return {mes,texto:activeTemplate.template(f,state.gestao)};
+  });
+
+  const win=window.open('','_blank');
+  const body=pages.map((p,i)=>`<div style="font-size:9pt;color:#888;font-family:Arial;margin-bottom:4px">${p.mes.toUpperCase()}/${ano}</div><pre style="white-space:pre-wrap;font-family:Arial;font-size:11pt;line-height:1.8;${i<pages.length-1?'page-break-after:always;':''}margin-top:0">${p.texto}</pre>`).join('');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{max-width:700px;margin:0 auto;padding:40px;font-size:11pt}@media print{button{display:none}}</style></head><body><button onclick="window.print()" style="margin-bottom:20px;padding:8px 20px;font-size:13px">Imprimir / Salvar PDF (12 recibos — ${ano})</button>${body}</body></html>`);
+
+  state.docHistorico.unshift({tipo:activeTemplate.nome+` — ano completo ${ano}`,data:new Date().toLocaleDateString('pt-BR'),preview:`12 recibos gerados (${MONTHS[0]} a ${MONTHS[11]}/${ano})`});
+  save();
+  const hist=document.getElementById('doc-historico');
+  if(hist) hist.innerHTML=state.docHistorico.map(d=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
       <div><div style="font-size:13px;font-weight:500">${d.tipo}</div><div style="font-size:12px;color:var(--text3)">${d.data}</div></div>
     </div>`).join('');
