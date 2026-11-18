@@ -817,6 +817,7 @@ textarea{resize:vertical;min-height:80px}
             <thead><tr><th>Mês</th><th style="text-align:right">Dias úteis</th><th style="text-align:right">Feriados</th><th style="text-align:right">Trabalhados</th><th style="text-align:right">Valor VT</th><th>Status</th></tr></thead>
             <tbody id="vt-tbody"></tbody>
           </table>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px">A linha de Janeiro do ano seguinte é o VT pago adiantado em dezembro. Cadastre os feriados desse próximo ano no Calendário para essa previsão sair mais precisa.</div>
         </div>
       </div>
     </div>
@@ -976,6 +977,10 @@ textarea{resize:vertical;min-height:80px}
           <div class="card-title" id="doc-editor-title">Editar Documento</div>
           <div style="display:flex;gap:8px">
             <button class="btn" onclick="closeDocEditor()">Cancelar</button>
+            <button class="btn" id="doc-gerar-ano-btn" style="display:none" onclick="gerarTodosDoAno()">
+              <svg fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Gerar todos do ano (12)
+            </button>
             <button class="btn primary" onclick="generateDocPDF()">
               <svg fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Gerar PDF
