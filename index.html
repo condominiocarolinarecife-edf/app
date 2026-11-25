@@ -651,6 +651,11 @@ textarea{resize:vertical;min-height:80px}
               <div id="sim-despesas-detalhe" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6"></div>
             </div>
             <div class="form-group">
+              <label class="form-label">Material de Limpeza (R$/mês, reserva)</label>
+              <input type="number" id="sim-limpeza" value="0" oninput="calcSimulador()">
+              <div id="sim-limpeza-detalhe" style="font-size:11px;color:var(--text3);margin-top:4px">Sugestão automática = total gasto com limpeza no ano ÷ 12. Ajuste se achar que vai gastar diferente.</div>
+            </div>
+            <div class="form-group">
               <label class="form-label" id="sim-aumento-desp-label">Aumento mínimo esperado nas despesas (%) — ano seguinte</label>
               <input type="number" id="sim-aumento-desp" value="10" oninput="calcSimulador()">
               <div style="font-size:11px;color:var(--text3);margin-top:4px">Sem histórico de anos anteriores pra projetar inflação real, usamos 10% como piso de segurança — ajuste se tiver uma estimativa melhor (reajuste salarial, INPC, etc).</div>
@@ -685,8 +690,16 @@ textarea{resize:vertical;min-height:80px}
 
     <!-- ==================== RESERVA ==================== -->
     <div id="panel-reserva" class="panel">
-      <div class="section-title">Reserva Financeira</div>
-      <div class="section-sub">Controle de reservas e movimentações</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <div class="section-title">Reserva Financeira</div>
+          <div class="section-sub">Controle de reservas e movimentações</div>
+        </div>
+        <button class="btn" onclick="abrirModalConverterReserva()">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          Converter em Saldo Livre
+        </button>
+      </div>
       <div class="grid-3" style="margin-bottom:20px">
         <div class="metric-card blue">
           <div class="metric-label">Saldo Total em Conta</div>
@@ -716,10 +729,10 @@ textarea{resize:vertical;min-height:80px}
       <div class="card">
         <div class="card-header">
           <div class="card-title">Reservas de Taxas Extras</div>
-          <button class="btn" onclick="showModal('modal-add-taxa-extra')" style="font-size:12px;padding:5px 10px">+ Nova Taxa Extra</button>
+          <button class="btn" onclick="abrirModalTaxaExtra()" style="font-size:12px;padding:5px 10px">+ Nova Taxa Extra</button>
         </div>
         <table>
-          <thead><tr><th>Descrição</th><th style="text-align:right">Valor Total</th><th style="text-align:right">Parcelas</th><th style="text-align:right">Arrecadado</th><th style="text-align:right">Usado</th><th style="text-align:right">Saldo</th></tr></thead>
+          <thead><tr><th>Descrição</th><th style="text-align:right">Valor Total</th><th style="text-align:right">Parcelas</th><th style="text-align:right">Arrecadado</th><th style="text-align:right">Usado</th><th style="text-align:right">Saldo</th><th></th></tr></thead>
           <tbody id="reserva-taxa-tbody"></tbody>
         </table>
       </div>
@@ -1238,21 +1251,58 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
-<!-- Add Taxa Extra -->
+<!-- Add/Edit Taxa Extra -->
 <div class="modal-overlay" id="modal-add-taxa-extra">
   <div class="modal">
-    <div class="modal-header"><div class="modal-title">Nova Taxa Extra</div><button class="modal-close" onclick="closeModal('modal-add-taxa-extra')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-header"><div class="modal-title" id="te-modal-title">Nova Taxa Extra</div><button class="modal-close" onclick="closeModal('modal-add-taxa-extra')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-body">
+      <input type="hidden" id="te-edit-idx" value="-1">
       <div class="form-group"><label class="form-label">Descrição</label><input type="text" id="te-desc" placeholder="Ex: Obra de revitalização da marquise"></div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Valor por unidade (R$)</label><input type="number" id="te-valor"></div>
         <div class="form-group"><label class="form-label">Número de parcelas</label><input type="number" id="te-parcelas" value="1"></div>
       </div>
       <div class="form-group"><label class="form-label">Mês de início</label><input type="month" id="te-inicio"></div>
+      <div class="form-group"><label class="form-label">Usado (R$, manual)</label><input type="number" id="te-usado" value="0"></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-add-taxa-extra')">Cancelar</button>
-      <button class="btn primary" onclick="saveTaxaExtra()">Criar Taxa</button>
+      <button class="btn primary" onclick="saveTaxaExtra()" id="te-save-btn">Criar Taxa</button>
+    </div>
+  </div>
+</div>
+
+<!-- Converter Reserva em Saldo Livre -->
+<div class="modal-overlay" id="modal-converter-reserva">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Converter Reserva em Saldo Livre</div><button class="modal-close" onclick="closeModal('modal-converter-reserva')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:16px">Marque a(s) reserva(s) que quer converter em saldo livre agora. O valor some da reserva e passa a contar como saldo livre para uso — não é um lançamento de receita ou despesa, só muda como o dinheiro que já está em conta é rotulado.</div>
+      <div class="form-group" style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500">
+          <input type="checkbox" id="cr-func-chk" onchange="document.getElementById('cr-func-valor-wrap').style.display=this.checked?'block':'none'">
+          Reserva Funcionário — <span id="cr-func-atual">R$ 0</span> disponível
+        </label>
+        <div id="cr-func-valor-wrap" style="display:none;margin-top:8px">
+          <label class="form-label">Valor a converter (R$)</label>
+          <input type="number" id="cr-func-valor">
+        </div>
+      </div>
+      <div class="form-group" style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500">
+          <input type="checkbox" id="cr-taxa-chk" onchange="document.getElementById('cr-taxa-valor-wrap').style.display=this.checked?'block':'none'">
+          Reserva Taxa Extra — <span id="cr-taxa-atual">R$ 0</span> disponível
+        </label>
+        <div id="cr-taxa-valor-wrap" style="display:none;margin-top:8px">
+          <label class="form-label">Valor a converter (R$)</label>
+          <input type="number" id="cr-taxa-valor">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3)">Se não marcar nenhuma agora, nada muda — você pode voltar aqui a qualquer momento para converter.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-converter-reserva')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarConverterReserva()">Converter</button>
     </div>
   </div>
 </div>
