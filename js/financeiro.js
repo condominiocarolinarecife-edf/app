@@ -149,12 +149,13 @@ function calcReservaFuncAcum(m){
   // Reserva cumulativa: começa do valor trazido do ano anterior (reservaFuncInicial), ou zero se não houver
   // Desconta: sal-ferias, sal-13, sal-cob
   // Desconta também: inss e fgts quando marcados como isReservaFunc (referentes a férias/13)
+  // Desconta também: conversões manuais em saldo livre (ver confirmarConverterReserva)
   const reservaMes = calcReservaMensal();
   let acum = state.balancetes[state.year]?.[0]?.reservaFuncInicial || 0;
   for(let i = 0; i <= m; i++){
     acum += reservaMes;
+    const b = state.balancetes[state.year]?.[i];
     if(i > 0){ // Janeiro nunca desconta — pagamentos são do ano anterior
-      const b = state.balancetes[state.year]?.[i];
       if(b && b.despesas){
         b.despesas.forEach(d=>{
           if(d.categoria==='sal-ferias' || d.categoria==='sal-13' || d.categoria==='sal-cob'){
@@ -167,6 +168,7 @@ function calcReservaFuncAcum(m){
         });
       }
     }
+    if(b && b.conversaoReservaFunc) acum -= Number(b.conversaoReservaFunc||0);
   }
   return Math.max(0, acum);
 }
@@ -189,6 +191,7 @@ function calcReservaTaxaAcum(m){
   // Acumula receitas de taxa extra marcadas como reserva (não reposição)
   // até o mês m, menos o que foi usado via despesas obras-taxa
   // Começa do valor trazido do ano anterior (reservaTaxaInicial), ou zero se não houver
+  // Desconta também: conversões manuais em saldo livre (ver confirmarConverterReserva)
   let acum = state.balancetes[state.year]?.[0]?.reservaTaxaInicial || 0;
   for(let i = 0; i <= m; i++){
     const b = state.balancetes[state.year]?.[i];
@@ -201,8 +204,61 @@ function calcReservaTaxaAcum(m){
     (b.despesas||[]).forEach(d=>{
       if(d.categoria==='obras-taxa') acum -= Number(d.valor||0);
     });
+    if(b.conversaoReservaTaxa) acum -= Number(b.conversaoReservaTaxa||0);
   }
   return Math.max(0, acum);
+}
+
+// ==================== CONVERSÃO DE RESERVA EM SALDO LIVRE ====================
+// Permite, a qualquer momento (não só na virada de ano), tirar um valor de uma
+// das reservas e deixá-lo contar como saldo livre. Não mexe em receita/despesa:
+// só reduz o acumulado da reserva a partir do mês/ano correntes em diante.
+function abrirModalConverterReserva(){
+  const m = state.currentMonth;
+  const func = calcReservaFuncAcum(m);
+  const taxa = calcReservaTaxaAcum(m);
+  document.getElementById('cr-func-atual').textContent = brl(func);
+  document.getElementById('cr-taxa-atual').textContent = brl(taxa);
+  document.getElementById('cr-func-chk').checked = false;
+  document.getElementById('cr-taxa-chk').checked = false;
+  document.getElementById('cr-func-valor-wrap').style.display = 'none';
+  document.getElementById('cr-taxa-valor-wrap').style.display = 'none';
+  document.getElementById('cr-func-valor').value = func.toFixed(2);
+  document.getElementById('cr-taxa-valor').value = taxa.toFixed(2);
+  showModal('modal-converter-reserva');
+}
+
+function confirmarConverterReserva(){
+  const m = state.currentMonth;
+  const convFunc = document.getElementById('cr-func-chk').checked;
+  const convTaxa = document.getElementById('cr-taxa-chk').checked;
+  if(!convFunc && !convTaxa){ closeModal('modal-converter-reserva'); return; }
+
+  const func = calcReservaFuncAcum(m);
+  const taxa = calcReservaTaxaAcum(m);
+  let valorFunc = convFunc ? (parseFloat(document.getElementById('cr-func-valor').value)||0) : 0;
+  let valorTaxa = convTaxa ? (parseFloat(document.getElementById('cr-taxa-valor').value)||0) : 0;
+  valorFunc = Math.max(0, Math.min(valorFunc, func));
+  valorTaxa = Math.max(0, Math.min(valorTaxa, taxa));
+
+  if(valorFunc<=0 && valorTaxa<=0){ closeModal('modal-converter-reserva'); return; }
+
+  const partes=[];
+  if(valorFunc>0) partes.push(`Reserva Funcionário: ${brl(valorFunc)}`);
+  if(valorTaxa>0) partes.push(`Reserva Taxa Extra: ${brl(valorTaxa)}`);
+  if(!confirm(`Confirma converter em saldo livre, em ${MONTHS[m]}/${state.year}?\n\n${partes.join('\n')}`)) return;
+
+  if(!state.balancetes[state.year]) state.balancetes[state.year]={};
+  if(!state.balancetes[state.year][m]) state.balancetes[state.year][m]={fechado:false,obs:'',receitas:[],despesas:[]};
+  const b = state.balancetes[state.year][m];
+  if(valorFunc>0) b.conversaoReservaFunc = Number(b.conversaoReservaFunc||0) + valorFunc;
+  if(valorTaxa>0) b.conversaoReservaTaxa = Number(b.conversaoReservaTaxa||0) + valorTaxa;
+
+  save();
+  closeModal('modal-converter-reserva');
+  renderReserva();
+  renderDashboard();
+  alert('Convertido! O valor agora conta como saldo livre.');
 }
 
 function getReceitasPorGrupo(m){
@@ -1103,17 +1159,81 @@ function getReceitaPrevistaMensal(){
     .reduce((s,c) => s + Number(c.taxa||0), 0);
 }
 
+// Categorias cujo valor varia mês a mês por motivo real (dias úteis, consumo) —
+// pra nunca faltar dinheiro, usa o valor MÁXIMO já observado, não a média.
+const CATS_VARIAVEIS_SIMULADOR = ['vale-tr','celpe'];
+
+// Base de cálculo do Simulador — diferente da do Orçamento/Previsão
+// (getMediaDespesasPorCategoria) porque aqui cada tipo de despesa pede uma
+// regra diferente pra não subestimar a taxa:
+// - Reserva Funcionário (férias+13º, já com os encargos): entra pela FÓRMULA
+//   mensal oficial (calcReservaMensal, a mesma da tela Reserva Financeira),
+//   não pela média dos meses em que ela foi paga — senão o valor depende de
+//   quando no ano a folga caiu.
+// - INSS/FGTS marcados como referentes a férias/13 (isReservaFunc) ficam de
+//   fora da conta "fixa" abaixo, pra não contar esse encargo duas vezes (ele
+//   já está embutido na fórmula da reserva).
+// - Categorias variáveis (CATS_VARIAVEIS_SIMULADOR): usa o valor MÁXIMO já
+//   lançado num mês fechado — é o cenário mais caro, então a taxa cobre.
+// - Todas as outras (fixas: salário, vale-alimentação, seguro, água, adm,
+//   secovi, compesa...): usa a média só dos meses em que o valor foi de fato
+//   lançado (não de todos os meses fechados) — assim uma parcela paga em
+//   meses alternados (ex.: seguro) ou um lançamento esporádico (ex.: água)
+//   não é diluído pra baixo por meses em que não teve lançamento.
+function getDespesasSimulador(ano){
+  const bal = state.balancetes[ano] || {};
+  const mesesFechados = [];
+  for(let i = 0; i <= 11; i++){ if(bal[i]?.fechado) mesesFechados.push(i); }
+
+  const porCat = {};
+  mesesFechados.forEach(m=>{
+    (bal[m].despesas||[]).forEach(d=>{
+      if(CATS_EXCLUIR_SIMULADOR.includes(d.categoria)) return;
+      if(['sal-ferias','sal-13','sal-cob','limpeza'].includes(d.categoria)) return; // entram à parte
+      if((d.categoria==='inss'||d.categoria==='fgts') && d.isReservaFunc) return; // já embutido na reserva
+      if(!porCat[d.categoria]) porCat[d.categoria]=[];
+      porCat[d.categoria].push(Number(d.valor||0));
+    });
+  });
+
+  const mediaPorCat = {};
+  Object.entries(porCat).forEach(([cat, valores])=>{
+    if(!valores.length) return;
+    mediaPorCat[cat] = CATS_VARIAVEIS_SIMULADOR.includes(cat)
+      ? Math.max(...valores)
+      : valores.reduce((a,b)=>a+b,0)/valores.length;
+  });
+
+  const reservaFunc = calcReservaMensal();
+
+  // Material de limpeza: total já gasto no ano inteiro (lançado ou não
+  // fechado — é o que já saiu do caixa) ÷ 12.
+  let totalLimpezaAno = 0;
+  for(let i = 0; i <= 11; i++){
+    (bal[i]?.despesas||[]).forEach(d=>{ if(d.categoria==='limpeza') totalLimpezaAno += Number(d.valor||0); });
+  }
+  const limpezaMensal = totalLimpezaAno/12;
+
+  return { mediaPorCat, reservaFunc, limpezaMensal, n: mesesFechados.length };
+}
+
 function importarDespesasSimulador(){
-  const { mediaPorCat, n } = getMediaDespesasPorCategoria(state.year);
+  const { mediaPorCat, reservaFunc, limpezaMensal, n } = getDespesasSimulador(state.year);
+
+  // Preenche o campo de limpeza sempre (não depende de mês fechado)
+  const elLimp = document.getElementById('sim-limpeza');
+  if(elLimp) elLimp.value = limpezaMensal.toFixed(2);
 
   if(n === 0){
     const detalhe = document.getElementById('sim-despesas-detalhe');
-    if(detalhe) detalhe.innerHTML = '<span style="color:var(--amber)">Nenhum mês fechado — preencha o valor manualmente.</span>';
+    if(detalhe) detalhe.innerHTML = `<span style="color:var(--amber)">Nenhum mês fechado — despesas recorrentes ficam manuais. Reserva Funcionário já entra pela fórmula (${brl(reservaFunc)}/mês).</span>`;
+    const el = document.getElementById('sim-despesas');
+    if(el) el.value = reservaFunc.toFixed(2);
     calcSimulador();
     return;
   }
 
-  let totalMedio = 0;
+  let totalMedio = reservaFunc;
   Object.values(mediaPorCat).forEach(v => totalMedio += v);
 
   // Preenche o campo
@@ -1123,11 +1243,11 @@ function importarDespesasSimulador(){
   // Mostra detalhamento
   const detalhe = document.getElementById('sim-despesas-detalhe');
   if(detalhe){
-    const linhas = Object.entries(mediaPorCat)
+    const linhasFixasVar = Object.entries(mediaPorCat)
       .sort((a,b) => b[1]-a[1])
-      .map(([cat, val]) => `${CATS_LABELS[cat]||cat}: ${brl(val)}`)
+      .map(([cat, val]) => `${CATS_LABELS[cat]||cat}${CATS_VARIAVEIS_SIMULADOR.includes(cat)?' (máx.)':''}: ${brl(val)}`)
       .join(' · ');
-    detalhe.innerHTML = `<span style="color:var(--green);font-weight:500">✓ Média de ${n} mês${n>1?'es':''} fechado${n>1?'s':''}</span> · ${linhas}<br><span style="color:var(--amber)">⚠ Obras excluídas do cálculo</span>`;
+    detalhe.innerHTML = `<span style="color:var(--green);font-weight:500">✓ Base de ${n} mês${n>1?'es':''} fechado${n>1?'s':''}</span> · Reserva Funcionário (Férias+13º, fórmula): ${brl(reservaFunc)} · ${linhasFixasVar}<br><span style="color:var(--text3)">Variáveis (dias úteis/consumo) usam o valor máximo já lançado; as demais usam a média só dos meses em que houve lançamento.</span><br><span style="color:var(--amber)">⚠ Obras, taxa extra e material de limpeza excluídos daqui (limpeza entra no campo próprio abaixo)</span>`;
   }
 
   calcSimulador();
@@ -1138,6 +1258,7 @@ function calcSimulador(){
   const elUnid  = document.getElementById('sim-unidades');
   const elTaxa  = document.getElementById('sim-taxa-atual');
   const elDesp  = document.getElementById('sim-despesas');
+  const elLimp  = document.getElementById('sim-limpeza');
   if(!elUnid || !elTaxa || !elDesp) return;
 
   // Se ainda estão com valores padrão, popula com dados reais
@@ -1154,6 +1275,7 @@ function calcSimulador(){
   }
   if(elDesp.value === '5238' || elDesp.dataset.auto !== '1'){
     elDesp.dataset.auto = '1'; // marca antes para evitar loop
+    if(elLimp) elLimp.dataset.auto = '1';
     importarDespesasSimulador();
     return; // importar já chama calcSimulador no final
   }
@@ -1161,6 +1283,8 @@ function calcSimulador(){
   const unidades = parseInt(elUnid.value) || 11;
   const taxaAtual = parseFloat(elTaxa.value) || 450;
   const despesasBase = parseFloat(elDesp.value) || 5238;
+  const limpezaMensal = parseFloat(elLimp?.value) || 0;
+  const despesasBaseTotal = despesasBase + limpezaMensal;
   const aumentoDespPct = parseFloat(document.getElementById('sim-aumento-desp')?.value||10)/100;
   const margem    = parseFloat(document.getElementById('sim-margem')?.value||5)/100;
   const sobraPct  = parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
@@ -1172,10 +1296,11 @@ function calcSimulador(){
   setTxtSim('sim-taxa-atual-label', `Taxa atual (R$) — vigente em ${anoAtual}`);
   setTxtSim('sim-despesas-label', `Despesas recorrentes mensais (base, ${anoAtual})`);
 
-  // Despesa projetada pro ano seguinte = base atual × (1 + aumento mínimo esperado).
+  // Despesa projetada pro ano seguinte = base total (recorrentes + reserva
+  // funcionário + material de limpeza) × (1 + aumento mínimo esperado).
   // Sem histórico de anos anteriores pra estimar a inflação real das contas, 10% é
   // usado como piso — ela pode ajustar se tiver uma estimativa melhor.
-  const despesasProjetadas = despesasBase * (1 + aumentoDespPct);
+  const despesasProjetadas = despesasBaseTotal * (1 + aumentoDespPct);
 
   const taxaMinima     = despesasProjetadas / unidades;
   const taxaComMargem  = taxaMinima * (1 + margem);
@@ -1216,7 +1341,9 @@ function calcSimulador(){
       <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Projeção para ${anoSeguinte} (se a taxa não mudar)</div>
       <div style="padding:12px;background:var(--surface2);border-radius:8px">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Receita atual/mês (taxa de ${anoAtual})</span><span style="font-family:var(--mono)">${brl(recAtual)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa base ${anoAtual}/mês</span><span style="font-family:var(--mono)">${brl(despesasBase)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesas recorrentes ${anoAtual}/mês (c/ reserva funcionário)</span><span style="font-family:var(--mono)">${brl(despesasBase)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Material de limpeza (reserva)/mês</span><span style="font-family:var(--mono)">${brl(limpezaMensal)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa base total ${anoAtual}/mês</span><span style="font-family:var(--mono);font-weight:600">${brl(despesasBaseTotal)}</span></div>
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px">Despesa projetada ${anoSeguinte}/mês (+${Math.round(aumentoDespPct*100)}%)</span><span style="font-family:var(--mono);color:var(--red)">${brl(despesasProjetadas)}</span></div>
         <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);padding-top:6px"><span style="font-size:13px">Superávit / Déficit projetado</span><span style="font-family:var(--mono);color:${deficit>=0?'var(--green)':'var(--red)'}">${brl(deficit)}</span></div>
       </div>
@@ -1240,13 +1367,15 @@ function exportSimulador(){
   // eram outras, e não projetava pro ano seguinte — agora espelha exatamente a tela.
   const unidades=parseInt(document.getElementById('sim-unidades').value||11);
   const despesasBase=parseFloat(document.getElementById('sim-despesas').value||5238);
+  const limpezaMensal=parseFloat(document.getElementById('sim-limpeza')?.value)||0;
+  const despesasBaseTotal=despesasBase+limpezaMensal;
   const taxa=parseFloat(document.getElementById('sim-taxa-atual').value||400);
   const aumentoDespPct=parseFloat(document.getElementById('sim-aumento-desp')?.value||10)/100;
   const margem=parseFloat(document.getElementById('sim-margem')?.value||5)/100;
   const sobraPct=parseFloat(document.getElementById('sim-sobra')?.value||30)/100;
   const anoAtual=state.year, anoSeguinte=state.year+1;
 
-  const despesasProjetadas=despesasBase*(1+aumentoDespPct);
+  const despesasProjetadas=despesasBaseTotal*(1+aumentoDespPct);
   const taxaMinima=despesasProjetadas/unidades;
   const taxaSegura=sobraPct<1 ? taxaMinima/(1-sobraPct) : taxaMinima;
   const taxaComMargem=taxaMinima*(1+margem);
@@ -1256,7 +1385,7 @@ function exportSimulador(){
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Simulação de Taxa</title><style>body{font-family:Arial;max-width:700px;margin:0 auto;padding:20px;font-size:11pt}h1{font-size:13pt;text-align:center}table{width:100%;border-collapse:collapse}td,th{padding:6px 10px;border:1pt solid #ccc}@media print{button{display:none}}</style></head><body>
   <button onclick="window.print()">Imprimir / PDF</button>
   <h1>${state.gestao.nome}</h1><h2 style="text-align:center;font-size:11pt">SIMULAÇÃO DE TAXA DE CONDOMÍNIO PARA ${anoSeguinte}</h2>
-  <p style="font-size:9pt;color:#555">Despesa recorrente mensal base (${anoAtual}): ${brl(despesasBase)} · Aumento mínimo esperado: ${Math.round(aumentoDespPct*100)}% · Despesa projetada ${anoSeguinte}: ${brl(despesasProjetadas)} · Unidades pagantes: ${unidades}</p>
+  <p style="font-size:9pt;color:#555">Despesas recorrentes mensais base, c/ reserva funcionário (${anoAtual}): ${brl(despesasBase)} · Material de limpeza (reserva)/mês: ${brl(limpezaMensal)} · Despesa base total: ${brl(despesasBaseTotal)} · Aumento mínimo esperado: ${Math.round(aumentoDespPct*100)}% · Despesa projetada ${anoSeguinte}: ${brl(despesasProjetadas)} · Unidades pagantes: ${unidades}</p>
   <table><tr><th>Cenário</th><th>Taxa/Unid.</th><th>Receita Total</th><th>Variação</th></tr>
   <tr><td>Taxa atual (${anoAtual})</td><td>${brl(taxa)}</td><td>${brl(taxa*unidades)}</td><td>—</td></tr>
   ${linha(`Mínimo p/ ${anoSeguinte} (cobrir despesa projetada, sobra zero)`,taxaMinima)}
@@ -1311,19 +1440,29 @@ function renderReserva(){
 
   // Reserva taxa extra — acumula receitas isReserva:true, deduz obras-taxa
   const tbody2 = document.getElementById('reserva-taxa-tbody');
-  tbody2.innerHTML = state.taxasExtras.map(t => {
-    const arrecadado = calcArrecadadoTaxaExtra(t);
-    const usado = Number(t.usado||0);
-    return `
-    <tr>
-      <td>${t.desc}</td>
-      <td class="tnum" style="text-align:right">${brl(t.valorUnit * t.parcelas)}</td>
-      <td style="text-align:right">${t.parcelas}</td>
-      <td class="tnum" style="text-align:right;color:var(--green)">${brl(arrecadado)}</td>
-      <td class="tnum" style="text-align:right;color:var(--red)">${brl(usado)}<span style="color:var(--text3);font-weight:400" title="O 'usado' ainda não é automático: não há vínculo entre uma despesa de obras e uma taxa extra específica. Edite manualmente clicando no valor, se precisar.">*</span></td>
-      <td class="tnum" style="text-align:right;font-weight:600">${brl(arrecadado - usado)}</td>
-    </tr>`;
-  }).join('');
+  if(!state.taxasExtras.length){
+    tbody2.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">Nenhuma taxa extra cadastrada.</td></tr>`;
+  } else {
+    tbody2.innerHTML = state.taxasExtras.map((t,i) => {
+      const arrecadado = calcArrecadadoTaxaExtra(t);
+      const usado = Number(t.usado||0);
+      return `
+      <tr>
+        <td>${t.desc}</td>
+        <td class="tnum" style="text-align:right">${brl(t.valorUnit * t.parcelas)}</td>
+        <td style="text-align:right">${t.parcelas}</td>
+        <td class="tnum" style="text-align:right;color:var(--green)">${brl(arrecadado)}</td>
+        <td class="tnum" style="text-align:right;color:var(--red)">${brl(usado)}<span style="color:var(--text3);font-weight:400" title="O 'usado' ainda não é automático: não há vínculo entre uma despesa de obras e uma taxa extra específica. Edite clicando no lápis, se precisar.">*</span></td>
+        <td class="tnum" style="text-align:right;font-weight:600">${brl(arrecadado - usado)}</td>
+        <td>
+          <div style="display:flex;gap:4px;justify-content:flex-end">
+            <button class="btn" style="padding:3px 8px;font-size:11px" onclick="abrirModalTaxaExtra(${i})">Editar</button>
+            <button class="btn" style="padding:3px 8px;font-size:11px;color:var(--red)" onclick="excluirTaxaExtra(${i})">✕</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 // Soma real do que já foi recebido para uma taxa extra específica, em todos os
@@ -1372,15 +1511,53 @@ function calcArrecadadoTaxaExtra(te){
   return total;
 }
 
+function abrirModalTaxaExtra(i){
+  const editando = i!==undefined && i!==null && i>=0 && state.taxasExtras[i];
+  document.getElementById('te-modal-title').textContent = editando ? 'Editar Taxa Extra' : 'Nova Taxa Extra';
+  document.getElementById('te-save-btn').textContent = editando ? 'Salvar' : 'Criar Taxa';
+  document.getElementById('te-edit-idx').value = editando ? i : -1;
+  if(editando){
+    const t = state.taxasExtras[i];
+    document.getElementById('te-desc').value = t.desc||'';
+    document.getElementById('te-valor').value = t.valorUnit||'';
+    document.getElementById('te-parcelas').value = t.parcelas||1;
+    document.getElementById('te-inicio').value = t.inicio||'';
+    document.getElementById('te-usado').value = t.usado||0;
+  } else {
+    document.getElementById('te-desc').value = '';
+    document.getElementById('te-valor').value = '';
+    document.getElementById('te-parcelas').value = 1;
+    document.getElementById('te-inicio').value = '';
+    document.getElementById('te-usado').value = 0;
+  }
+  showModal('modal-add-taxa-extra');
+}
+
 function saveTaxaExtra(){
-  state.taxasExtras.push({
+  const idx = parseInt(document.getElementById('te-edit-idx').value);
+  const dados = {
     desc:document.getElementById('te-desc').value,
     valorUnit:parseFloat(document.getElementById('te-valor').value)||0,
     parcelas:parseInt(document.getElementById('te-parcelas').value)||1,
     inicio:document.getElementById('te-inicio').value,
-    arrecadado:0,usado:0
-  });
+    arrecadado:0,
+    usado:parseFloat(document.getElementById('te-usado').value)||0
+  };
+  if(!dados.desc){document.getElementById('te-desc').focus();return;}
+  if(idx>=0 && state.taxasExtras[idx]){
+    state.taxasExtras[idx] = {...state.taxasExtras[idx], ...dados};
+  } else {
+    state.taxasExtras.push(dados);
+  }
   save();closeModal('modal-add-taxa-extra');renderReserva();
+}
+
+function excluirTaxaExtra(i){
+  const t = state.taxasExtras[i];
+  if(!t)return;
+  if(!confirm(`Excluir a taxa extra "${t.desc}"?\n\nIsso remove só o cadastro da taxa (e sua reserva deixa de ser contada). Os lançamentos de receita/despesa já feitos não são apagados.`))return;
+  state.taxasExtras.splice(i,1);
+  save();renderReserva();
 }
 
 // ==================== ENCARGOS ====================
