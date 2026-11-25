@@ -76,6 +76,18 @@ const docGroups=[
           return `${g.nome.toUpperCase()}\nCNPJ ${g.cnpj} — ${g.endereco}\n\nPROTOCOLO DE ENTREGA DE BOLETOS\nTAXA MENSAL${f['taxa-extra']?' + TAXA EXTRA: '+f['taxa-extra']:''} — ${f.mes||MONTHS[new Date().getMonth()].toUpperCase()} ${state.year}\n\n${rows.join('\n\n')}\n\n\n\n\n${f.data?formatDateBR(f.data):'Recife, ______ de __________ de '+state.year+'.'}\n\n_________________________________\n${g.sindico||'[Síndico(a)]'}\nSíndica ${g.nome}`;
         }
       },
+      {id:'protocolo-boletos-taxa-extra',icon:'📬',nome:'Protocolo — Entrega de Boletos (Taxa Extra)',desc:'Lista de protocolo de entrega só da taxa extra, separado da taxa mensal',
+        campos:[
+          {id:'taxa-extra-desc',label:'Taxa extra',tipo:'select-taxa-extra'},
+          {id:'parcela',label:'Parcela (ex: 3/10)',tipo:'text'},
+          {id:'data',label:'Data',tipo:'date'}
+        ],
+        template:(f,g)=>{
+          const rows=UNITS.map(u=>`Apto. ${u} ____________________________________________`);
+          const descTaxa=f['taxa-extra-desc']||'[selecionar taxa extra]';
+          return `${g.nome.toUpperCase()}\nCNPJ ${g.cnpj} — ${g.endereco}\n\nPROTOCOLO DE ENTREGA DE BOLETOS\nTAXA EXTRA: ${descTaxa}${f.parcela?' — PARCELA '+f.parcela:''}\n\n${rows.join('\n\n')}\n\n\n\n\n${f.data?formatDateBR(f.data):'Recife, ______ de __________ de '+state.year+'.'}\n\n_________________________________\n${g.sindico||'[Síndico(a)]'}\nSíndica ${g.nome}`;
+        }
+      },
       {id:'protocolo-comunicados',icon:'📮',nome:'Protocolo — Entrega de Comunicados',desc:'Lista de protocolo de recebimento',
         campos:[
           {id:'assunto',label:'Assunto do comunicado',tipo:'text'},
@@ -318,6 +330,7 @@ function openDocTemplate(id){
     if(c.tipo==='select-apto')return`<div class="form-group"><label class="form-label">${c.label}</label><select onchange="updateDocPreview()" data-field="${c.id}"><option value="">Selecionar</option>${UNITS.map(u=>`<option>${u}</option>`).join('')}</select></div>`;
     if(c.tipo==='select-mes')return`<div class="form-group"><label class="form-label">${c.label}</label><select onchange="updateDocPreview()" data-field="${c.id}">${MONTHS.map(m=>`<option>${m.toUpperCase()}</option>`).join('')}</select></div>`;
     if(c.tipo==='select')return`<div class="form-group"><label class="form-label">${c.label}</label><select onchange="updateDocPreview()" data-field="${c.id}">${(c.opts||[]).map(o=>`<option>${o}</option>`).join('')}</select></div>`;
+    if(c.tipo==='select-taxa-extra')return`<div class="form-group"><label class="form-label">${c.label}</label><select onchange="updateDocPreview()" data-field="${c.id}"><option value="">Selecionar</option>${(state.taxasExtras||[]).map(te=>`<option>${te.desc}</option>`).join('')}</select></div>`;
     if(c.tipo==='textarea')return`<div class="form-group" style="grid-column:span 3"><label class="form-label">${c.label}</label><textarea rows="3" oninput="updateDocPreview()" data-field="${c.id}" placeholder="${c.label}">${c.default||''}</textarea></div>`;
     return`<div class="form-group"><label class="form-label">${c.label}</label><input type="${c.tipo}" oninput="updateDocPreview()" data-field="${c.id}" value="${c.default||''}" placeholder="${c.label}"></div>`;
   }).join('');
